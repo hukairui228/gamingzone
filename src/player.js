@@ -1,660 +1,369 @@
-// The player: on-foot controller, driving, camera rigs, combat, drift/stunt scoring, focus time.
 import * as THREE from 'three';
-import { G } from './state.js';
-import { Character, OUTFITS } from './character.js';
-import { WEAPONS, WEAPON_ORDER } from './weapons.js';
-import { clamp, lerp, damp, dampAngle, angleDiff, circleOBB } from './util.js';
-import { groundHeight, isLand, WATER_Y, CITY, P, nearestLanePoint } from './layout.js';
+import { createCharacter } from './character.js';
+import { buildModel } from './models.js';
 
-const tmpV = new THREE.Vector3();
+// Original arsenal (models + sounds from the IPA).
+export const WEAPONS = {
+  fist: { name: '拳头', melee: true, dmg: 18, range: 1.7, rate: 0.45 },
+  bat: { name: '棒球棍', melee: true, dmg: 40, range: 2.1, rate: 0.6, model: 'gun_baseball_bat', snd: 'sfx_baseballbat_woosh' },
+  beretta: { name: '贝雷塔手枪', dmg: 26, rate: 0.28, clip: 12, ammo: 60, model: 'gun_beretta', snd: 'sfx_berreta', reload: 'sfx_berreta_reload', aim: 'handgun', spread: 0.012 },
+  uzi: { name: '乌兹冲锋枪', dmg: 15, rate: 0.075, clip: 30, ammo: 150, model: 'gun_uzi', snd: 'sfx_uzi_shoot', reload: 'sfx_uzi_reload', aim: 'handgun', spread: 0.035, auto: true },
+  ak47: { name: 'AK-47', dmg: 32, rate: 0.11, clip: 30, ammo: 120, model: 'gun_ak47', snd: 'sfx_ak47_shoot', reload: 'sfx_ak47_reload', aim: 'rifle', spread: 0.02, auto: true },
+  sniper: { name: '狙击步枪', dmg: 150, rate: 1.1, clip: 5, ammo: 20, model: 'gun_sniper', snd: 'sfx_sniper_shoot', reload: 'sfx_sniper_reload', aim: 'rifle', spread: 0, scope: true },
+  rpg: { name: '火箭筒', dmg: 300, rate: 1.5, clip: 1, ammo: 6, model: 'gun_rpg', snd: 'sfx_rpg_shoot', reload: 'sfx_rpg_reload', aim: 'rifle', explosive: true },
+};
+export const WEAPON_ORDER = ['fist', 'bat', 'beretta', 'uzi', 'ak47', 'sniper', 'rpg'];
+
+const _v = new THREE.Vector3(), _d = new THREE.Vector3(), _o = new THREE.Vector3();
+const _col = { hit: false, nx: 0, nz: 0, depth: 0 };
 
 export class Player {
-  constructor(scene) {
-    this.char = new Character(OUTFITS.player);
-    scene.add(this.char.mesh);
-    this.team = 'player';
-    this.inVehicle = null;
-    this.camYaw = 0; this.camPitch = -0.12; this.camDist = 4;
-    this.carCamYawOff = 0; this.carCamPitch = 0.22; this.lastMouse = 0;
-    this.camMode = 0;
-    this.camPos = new THREE.Vector3();
-    this.vy = 0; this.grounded = true;
+  constructor(game) {
+    this.g = game;
+    this.pos = new THREE.Vector3();
+    this.yaw = 0;
+    this.vy = 0;
+    this.grounded = true;
+    this.health = 100; this.armor = 0;
+    this.vehicle = null;
+    this.weapons = { fist: { clip: 0, ammo: 0 } };
     this.weapon = 'fist';
-    this.fireCd = 0; this.reload = 0;
-    this.mag = {};
-    this.focus = 1; this.focusOn = false;
-    this.drift = { score: 0, mult: 1, t: 0, idle: 0, active: false };
-    this.enterT = 0;
-    this.lastShot = 0;
-    this.headlight = new THREE.SpotLight(0xfff2dd, 0, 60, 0.55, 0.5, 1.4);
-    this.headlight.castShadow = false;
-    scene.add(this.headlight, this.headlight.target);
-    this.invuln = 0;
-    this.spreadMul = 1; this.dmgMul = 1;
-    this.prevWheels = null;
-    this.stunt = null;
-    this.zoneTimer = 0;
-    this.swimming = false;
-    this.swimStamina = 1;
-    this.waterY = 0;
+    this.cool = 0;
+    this.reloading = 0;
+    this.action = 0; // locks movement during one-shot clips
+    this.dead = false;
+    this.gunModels = {};
   }
 
-  get x() { return this.inVehicle ? this.inVehicle.x : this.char.x; }
-  get z() { return this.inVehicle ? this.inVehicle.z : this.char.z; }
-  get y() { return this.inVehicle ? this.inVehicle.y : this.char.y; }
-  get hp() { return this.char.hp; }
-  get dead() { return this.char.dead; }
-
-  load(save) {
-    this.char.hp = 100; this.char.armor = save.armor || 0;
-    for (const w of WEAPON_ORDER) if (save.weapons[w]) this.mag[w] = Math.min(WEAPONS[w].mag || 0, save.ammo[w] || 0);
-    this.selectWeapon('fist');
-    this.swimming = false;
-    this.swimStamina = 1;
-  }
-
-  place(x, z, h = 0) {
-    this.char.place(x, z, h);
-    this.char.y = Math.max(0, groundHeight(x, z));
-    this.camYaw = h;
-    this.char.sync();
-    this.swimming = false;
-    this.swimStamina = 1;
-  }
-
-  // ---------------- weapons ----------------
-  hasWeapon(id) { return !!G.save.weapons[id] && (id === 'fist' || (G.save.ammo[id] || 0) > 0); }
-  selectWeapon(id) {
-    if (!this.hasWeapon(id)) return;
-    this.weapon = id;
-    this.char.setWeapon(id === 'fist' ? 'fist' : id);
-    this.reload = 0;
-    if (id !== 'fist' && this.mag[id] == null) this.mag[id] = Math.min(WEAPONS[id].mag, G.save.ammo[id] || 0);
-    G.hud && G.hud.weapon();
-  }
-  cycleWeapon(dir = 1) {
-    let i = WEAPON_ORDER.indexOf(this.weapon);
-    for (let k = 0; k < WEAPON_ORDER.length; k++) {
-      i = (i + dir + WEAPON_ORDER.length) % WEAPON_ORDER.length;
-      if (this.hasWeapon(WEAPON_ORDER[i])) { this.selectWeapon(WEAPON_ORDER[i]); G.audio && G.audio.ui('switch'); return; }
+  async load() {
+    this.c = await createCharacter('char_main_character');
+    this.root = this.c.root;
+    this.root.position.copy(this.pos);
+    this.pos = this.root.position;
+    this.g.scene.add(this.root);
+    this.hand = this.c.getNode('r_h_weapon');
+    this.c.play('sl__player__idle');
+    for (const k of WEAPON_ORDER) {
+      const w = WEAPONS[k];
+      if (!w.model) continue;
+      buildModel(w.model).then((m) => {
+        const inner = m.children[0];
+        m.remove(inner);
+        inner.rotation.set(0, 0, 0); inner.scale.setScalar(1);
+        inner.visible = false;
+        this.hand.add(inner);
+        this.gunModels[k] = inner;
+        this.showWeapon();
+      });
     }
-  }
-  giveWeapon(id, ammo) {
-    const first = !G.save.weapons[id];
-    G.save.weapons[id] = 1;
-    if (id !== 'fist') G.save.ammo[id] = (G.save.ammo[id] || 0) + ammo;
-    if (this.mag[id] == null || this.mag[id] === 0) this.mag[id] = Math.min(WEAPONS[id].mag || 0, G.save.ammo[id]);
-    if (first || this.weapon === 'fist') this.selectWeapon(id);
-    G.hud && G.hud.weapon();
+    return this;
   }
 
-  // ---------------- damage ----------------
-  hurt(dmg, attacker, dx = 0, dz = 0, part = 'body', melee = false, force = 0) {
-    if (this.char.dead || this.invuln > 0) return;
-    if (G.cheatGod) return;
-    if (this.inVehicle) { this.inVehicle.damage(dmg * 0.5, 'bullet', attacker); dmg *= 0.25; }
-    let d = dmg;
-    if (this.char.armor > 0) { const a = Math.min(this.char.armor, d * 0.7); this.char.armor -= a; d -= a; }
-    this.char.hp -= d;
-    this.char.hitFlash = 1;
-    G.hud && G.hud.damage(Math.min(1, dmg / 40));
-    G.audio && G.audio.hurt(true);
-    if (this.char.hp <= 0) {
-      this.char.hp = 0;
-      if (this.inVehicle) this.exitVehicle(true);
-      this.char.die(dx, dz, force);
-      this.char.groundY = this.char.y;
-      G.events.emit('playerDied', attacker);
-    }
+  give(k, ammo) {
+    const w = WEAPONS[k];
+    const cur = this.weapons[k] || { clip: 0, ammo: 0 };
+    cur.ammo += ammo ?? w.ammo ?? 0;
+    if (!this.weapons[k]) { cur.clip = Math.min(w.clip || 0, cur.ammo); cur.ammo -= cur.clip; }
+    this.weapons[k] = cur;
+    this.weapon = k;
+    this.showWeapon();
   }
 
-  // ---------------- vehicles ----------------
-  tryEnter() {
-    const v = G.vehicles.nearest(this.char.x, this.char.z, 4.2, (v) => !v.dead && v.sinking <= 0 && !v.noEnter);
-    if (!v) return false;
-    if (v.driver && v.driver !== 'player') {
-      // carjack
-      const ped = v.driver;
-      G.pedSys && G.pedSys.ejectDriver(v, ped);
-      G.events.emit('carjack', v);
-      G.save.stats.carsStolen++;
-    }
-    this.enterVehicle(v);
-    return true;
-  }
-  enterVehicle(v) {
-    this.inVehicle = v;
-    v.driver = 'player';
-    v.ai = null;
-    v.input.throttle = 0; v.input.steer = 0;
-    this.char.mesh.visible = false;
-    this.carCamYawOff = angleDiff(v.h, this.camYaw);
-    this.char.aim = false;
-    G.audio && G.audio.door();
-    G.events.emit('enterVehicle', v);
-    G.hud && G.hud.vehicle(v);
-  }
-  exitVehicle(force = false) {
-    const v = this.inVehicle;
-    if (!v) return;
-    const spd = v.speed;
-    const d = v.doorPos(1);
-    let px = d.x, pz = d.z;
-    // if door blocked, use other side
-    const tmp = {};
-    if (G.world.statics.collideCircle(px, pz, 0.4, v.y, tmp)) { const d2 = v.doorPos(-1); px = d2.x; pz = d2.z; }
-    v.driver = null;
-    v.input.throttle = 0; v.input.steer = 0; v.input.handbrake = spd < 9; v.input.nitro = false;
-    this.inVehicle = null;
-    this.char.mesh.visible = true;
-    this.char.x = px; this.char.z = pz; this.char.y = Math.max(groundHeight(px, pz), v.y);
-    this.char.h = v.h;
-    // If exiting into water, start swimming
-    const exitGh = groundHeight(px, pz);
-    if (exitGh < -5) {
-      this.char.y = WATER_Y - 0.3;
-      this.camYaw = v.h + this.carCamYawOff;
-      this.headlight.intensity = 0;
-      G.audio && G.audio.door();
-      G.events.emit('exitVehicle', v);
-      G.hud && G.hud.vehicle(null);
-      this.enterWater();
-      return;
-    }
-    this.camYaw = v.h + this.carCamYawOff;
-    this.headlight.intensity = 0;
-    G.audio && G.audio.door();
-    if (spd > 9 && !force) {
-      this.hurt(spd * 1.2, null);
-      this.char.vx = v.vx * 0.5; this.char.vz = v.vz * 0.5;
-    }
-    G.events.emit('exitVehicle', v);
-    G.hud && G.hud.vehicle(null);
+  showWeapon() {
+    for (const [k, m] of Object.entries(this.gunModels)) m.visible = k === this.weapon && !this.vehicle;
   }
 
-  // ---------------- update ----------------
-  update(dt, rdt, input) {
-    const fireLike = input.held('fire');
-    this.invuln = Math.max(0, this.invuln - dt);
-    // focus (bullet time)
-    if (input.pressed('focus') && !this.char.dead) {
-      if (this.focusOn) this.focusOn = false;
-      else if (this.focus > 0.15) { this.focusOn = true; G.audio && G.audio.focus(true); }
-    }
-    if (this.focusOn) {
-      this.focus -= rdt * 0.16;
-      if (this.focus <= 0) { this.focus = 0; this.focusOn = false; G.audio && G.audio.focus(false); }
-    } else this.focus = Math.min(1, this.focus + rdt * 0.012);
-
-    // camera look
-    const sens = 0.0022 * G.settings.sensitivity;
-    const inv = G.settings.invertY ? -1 : 1;
-    if (this.char.dead) { this.updateDeadCam(rdt); return; }
-
-    if (this.swimming) {
-      if (input.pressed('enter')) {
-        const v = G.vehicles.nearest(this.char.x, this.char.z, 5, (v) => !v.dead && v.t.boat);
-        if (v) { this.swimming = false; this.enterVehicle(v); }
-      }
-      this.updateSwimming(dt, rdt, input);
-      this.updateCameraFov(rdt);
-      return;
-    }
-
-    if (input.wheel) this.cycleWeapon(input.wheel);
-    if (input.pressed('weapon')) this.cycleWeapon(1);
-    for (let k = 1; k <= 7; k++) if (input.pressed('w' + k)) this.selectWeapon(WEAPON_ORDER[k - 1]);
-    if (input.pressed('grenade') && this.hasWeapon('grenade')) this.selectWeapon('grenade');
-
-    if (this.inVehicle) {
-      if (input.look.x || input.look.y) { this.carCamYawOff -= input.look.x * sens; this.carCamPitch = clamp(this.carCamPitch + input.look.y * sens * inv, -0.2, 1.1); this.lastMouse = G.time; }
-      this.updateDriving(dt, rdt, input);
-    } else {
-      this.camYaw -= input.look.x * sens;
-      this.camPitch = clamp(this.camPitch - input.look.y * sens * inv, -1.2, 0.9);
-      this.updateOnFoot(dt, rdt, input);
-    }
-    if (input.pressed('enter')) {
-      if (this.inVehicle) this.exitVehicle();
-      else this.tryEnter();
-    }
-    // shooting
-    this.fireCd -= dt;
-    if (this.reload > 0) {
-      this.reload -= dt;
-      if (this.reload <= 0) {
-        const w = WEAPONS[this.weapon];
-        this.mag[this.weapon] = Math.min(w.mag, G.save.ammo[this.weapon] || 0);
-        G.hud && G.hud.weapon();
-      }
-    }
-    const canShoot = !this.inVehicle || (['pistol', 'smg'].includes(this.weapon));
-    const w = WEAPONS[this.weapon];
-    if (fireLike && canShoot && this.fireCd <= 0 && this.reload <= 0) {
-      if (w.auto || input.pressed('fire') || (this.gpFireHeld(input))) this.shoot();
-    }
-    this.char.aim = !this.inVehicle && (input.held('aim') || G.time - this.lastShot < 0.6) && !WEAPONS[this.weapon].melee;
-    this.updateCameraFov(rdt);
-  }
-  gpFireHeld(input) { return input.gpActive && input.held('fire') && this.fireCd < -0.15; }
-
-  aimRay() {
-    const cam = G.camera;
-    cam.getWorldDirection(tmpV);
-    return { ox: cam.position.x, oy: cam.position.y, oz: cam.position.z, dx: tmpV.x, dy: tmpV.y, dz: tmpV.z };
+  nextWeapon() {
+    const owned = WEAPON_ORDER.filter((k) => this.weapons[k]);
+    this.weapon = owned[(owned.indexOf(this.weapon) + 1) % owned.length];
+    this.showWeapon();
+    this.c.overlay(null);
+    this.g.audio.play('sfx_pickup_weapons', { vol: 0.3 });
   }
 
-  autoAim(range = 45, cone = 0.45) {
-    // nearest hostile/any character within cone of camera forward
-    const r = this.aimRay();
-    let best = null, bs = cone;
-    const px = this.x, pz = this.z;
-    for (const a of G.combat.actors()) {
-      if (a === this || !a.char || a.char.dead || a.inVehicle) continue;
-      const dx = a.char.x - px, dz = a.char.z - pz, d = Math.hypot(dx, dz);
-      if (d > range || d < 0.5) continue;
-      const fl = Math.hypot(r.dx, r.dz) || 1;
-      const dot = (dx * r.dx + dz * r.dz) / (d * fl);
-      const ang = Math.acos(clamp(dot, -1, 1));
-      const pri = ang - (a.hostile ? 0.2 : 0) + d * 0.002;
-      if (ang < cone && pri < bs) { bs = pri; best = a; }
+  hurt(dmg, from) {
+    if (this.dead || this.g.cheatGod) return;
+    if (this.armor > 0) { const a = Math.min(this.armor, dmg * 0.7); this.armor -= a; dmg -= a; }
+    this.health -= dmg;
+    this.g.hud.damageFlash(Math.min(1, dmg / 30), from);
+    if (Math.random() < 0.3) this.g.audio.bark('vfx_johnny_hit', 3, { vol: 0.8 });
+    if (this.health <= 0) this.g.die('wasted');
+  }
+
+  // ---------------------------------------------------------------- vehicles
+  nearestCar() {
+    let best = null, bd = 4.5;
+    for (const v of this.g.vehicles()) {
+      if (v.health <= 0) continue;
+      const d = Math.hypot(v.pos.x - this.pos.x, v.pos.z - this.pos.z) - v.width * 0.4;
+      if (d < bd && Math.abs(v.pos.y - this.pos.y) < 2.5) { bd = d; best = v; }
     }
     return best;
   }
 
-  shoot() {
+  enter(v) {
+    const g = this.g;
+    if (v.ai) {
+      const wasDriven = v.driver === 'npc' || v.driver === 'cop';
+      g.traffic.detach(v);
+      if (wasDriven) {
+        g.ejectDriver(v);
+        g.crime(v.driver === 'cop' ? 'copcar' : 'jack', v.pos);
+        g.audio.bark('vfx_johnny_stealing', 3);
+      }
+    }
+    v.driver = 'player';
+    v.ai = null;
+    this.vehicle = v;
+    g.audio.play('sfx_car_door_open', { vol: 0.7 });
+    setTimeout(() => g.audio.play('sfx_car_door_close', { vol: 0.7 }), 450);
+    this.seat(v);
+    this.c.overlay(null);
+    this.c.play(v.height > 1.9 ? 'fl__player__car_seated_idle_hi' : 'fl__player__car_seated_idle_low');
+    this.showWeapon();
+    if (!/npc_|boat|heli/.test(v.def.engine)) g.audio.play(`sfx_${v.def.engine}_startup`, { vol: 0.6 });
+    else if (v.type === 'heli') g.audio.play('sfx_helicopter_start', { vol: 0.6 });
+    g.audio.setRadioInside(true);
+    if (g.audio.station < 0 && g.settings.autoRadio) g.audio.setStation(Math.floor(Math.random() * 5));
+    g.hud.notify(v.def.name, 1.5);
+  }
+
+  seat(v) {
+    const seat = v.mesh.getObjectByName('player_sitting_position_00');
+    v.root.add(this.root);
+    if (seat) {
+      v.mesh.updateMatrixWorld(true);
+      seat.getWorldPosition(_v);
+      v.root.worldToLocal(_v);
+      this.root.position.set(_v.x, _v.y - 0.58, _v.z - 0.12);
+    } else this.root.position.set(0.35, 0.05, -0.1);
+    this.root.rotation.set(0, 0, 0);
+    this.pos = this.root.position;
+  }
+
+  exit() {
+    const g = this.g, v = this.vehicle;
+    if (!v) return;
+    if (v.speed > 6) return;
+    v.root.updateMatrixWorld(true);
+    this.root.getWorldPosition(_v);
+    const left = _d.set(Math.cos(v.yaw), 0, -Math.sin(v.yaw)); // car's +X side (driver door)
+    g.scene.add(this.root);
+    this.root.position.set(_v.x + left.x * 1.3, v.pos.y, _v.z + left.z * 1.3);
+    this.pos = this.root.position;
+    this.root.rotation.set(0, v.yaw, 0);
+    this.yaw = v.yaw;
+    g.world.collide(this.pos, 0.35, 1.7);
+    v.driver = null;
+    v.ai = null;
+    this.vehicle = null;
+    g.parked.add(v);
+    g.audio.play('sfx_car_door_open', { vol: 0.6 });
+    g.audio.engine(null, 0, 0, false);
+    g.audio.setRadioInside(false);
+    this.c.play('sl__player__idle');
+    this.showWeapon();
+  }
+
+  // ---------------------------------------------------------------- update
+  update(dt, ctl, cam) {
+    const g = this.g;
+    if (this.dead) { this.c.update(dt); return; }
+    this.cool -= dt;
+    if (ctl.weaponNext && !this.vehicle) this.nextWeapon();
+    if (this.vehicle) return this.drive(dt, ctl);
+
+    if (ctl.enter) {
+      const v = this.nearestCar();
+      if (v) { this.enter(v); return; }
+    }
     const w = WEAPONS[this.weapon];
-    if (w.melee) {
-      this.fireCd = w.rate;
-      this.char.punchT = 0.35;
-      this.char.h = this.camYaw;
-      G.combat.melee(this, this.char.x, this.char.z, this.char.h, this.weapon);
-      return;
-    }
-    if ((this.mag[this.weapon] || 0) <= 0) {
-      if ((G.save.ammo[this.weapon] || 0) > 0) { this.reload = 1.1; G.audio && G.audio.ui('reload'); }
-      else { G.audio && G.audio.ui('empty'); this.fireCd = 0.3; if (this.weapon !== 'fist') this.cycleWeapon(-1); }
-      return;
-    }
-    this.fireCd = w.rate;
-    this.mag[this.weapon]--;
-    G.save.ammo[this.weapon]--;
-    this.lastShot = G.time;
-    // origin: muzzle approx (right hand) ; aim at crosshair target
-    let ox, oy, oz;
-    if (this.inVehicle) { const v = this.inVehicle; ox = v.x; oy = v.y + 1.3; oz = v.z; }
-    else {
-      const c = this.char, h = this.camYaw;
-      ox = c.x - Math.cos(h) * 0.25 + Math.sin(h) * 0.5; oy = c.y + 1.45; oz = c.z + Math.sin(h) * 0.25 + Math.cos(h) * 0.5;
-    }
-    let tx, ty, tz;
-    const useAuto = G.input.touchMode || G.input.gpActive;
-    const target = useAuto ? this.autoAim() : null;
-    if (target) {
-      tx = target.char.x; ty = target.char.y + 1.2; tz = target.char.z;
-      if (!this.inVehicle) this.camYaw = dampAngle(this.camYaw, Math.atan2(tx - this.x, tz - this.z), 20, 0.05);
-    } else {
-      const r = this.aimRay();
-      const start = this.inVehicle ? 6 : this.camDist + 0.5;
-      const hit = G.combat.raycast(r.ox + r.dx * start, r.oy + r.dy * start, r.oz + r.dz * start, r.dx, r.dy, r.dz, w.range || 150, this);
-      tx = r.ox + r.dx * (start + hit.t); ty = r.oy + r.dy * (start + hit.t); tz = r.oz + r.dz * (start + hit.t);
-    }
-    let dx = tx - ox, dy = ty - oy, dz = tz - oz;
-    const L = Math.hypot(dx, dy, dz) || 1; dx /= L; dy /= L; dz /= L;
-    this.spreadMul = (this.char.aim ? 0.6 : 1.2) * (this.focusOn ? 0.4 : 1) * (this.inVehicle ? 1.6 : 1);
-    if (!this.inVehicle) this.char.h = this.camYaw;
-    const wm = this.char.weapon;
-    let muzzle = { x: ox + dx * 0.4, y: oy + dy * 0.4, z: oz + dz * 0.4 };
-    if (wm && !this.inVehicle) { wm.getWorldPosition(tmpV); muzzle = { x: tmpV.x + dx * 0.45, y: tmpV.y + dy * 0.45, z: tmpV.z + dz * 0.45 }; }
-    const res = G.combat.fire(this, this.weapon, ox, oy, oz, dx, dy, dz, muzzle);
-    if (res && (res.actor || res.vehicle)) G.hud && G.hud.hit();
-    this.char.recoil = 1;
-    const kick = { pistol: 0.012, smg: 0.006, shotgun: 0.04, rifle: 0.01, rocket: 0.05, grenade: 0 }[this.weapon] || 0;
-    this.recoilPitch = (this.recoilPitch || 0) + kick; G.fx.shake = Math.max(G.fx.shake, kick * 6);
-    if (this.mag[this.weapon] <= 0 && (G.save.ammo[this.weapon] || 0) > 0) { this.reload = this.weapon === 'grenade' || this.weapon === 'rocket' ? 0.8 : 1.2; }
-    G.hud && G.hud.weapon();
-  }
-
-  updateOnFoot(dt, rdt, input) {
-    const c = this.char;
-    const mv = input.move;
-    const sprint = input.held('sprint') && !c.aim;
-    const speed = c.aim ? 3.0 : sprint ? 7.2 : 4.4;
-    const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
-    const rx = -fz, rz = fx;
-    let wx = fx * mv.y + rx * mv.x, wz = fz * mv.y + rz * mv.x;
-    const ml = Math.hypot(wx, wz);
-    if (ml > 1) { wx /= ml; wz /= ml; }
-    const tvx = wx * speed, tvz = wz * speed;
-    const accel = this.grounded ? 12 : 2;
-    c.vx = damp(c.vx || 0, tvx, accel, dt);
-    c.vz = damp(c.vz || 0, tvz, accel, dt);
-    c.x += c.vx * dt; c.z += c.vz * dt;
-    const footSpeed = Math.hypot(c.vx, c.vz);
-    if (footSpeed > 0.5) G.save.stats.distanceFoot = (G.save.stats.distanceFoot || 0) + footSpeed * dt;
-    // facing
-    if (c.aim || (G.time - this.lastShot < 0.6)) c.h = dampAngle(c.h, this.camYaw, 18, dt);
-    else if (ml > 0.1) c.h = dampAngle(c.h, Math.atan2(wx, wz), 10, dt);
-    // collisions with statics
-    const push = G.world.statics.collideCircle(c.x, c.z, 0.38, c.y, this._push || (this._push = {}));
-    if (push) { c.x += push.x; c.z += push.z; }
-    // vehicles
-    for (const v of G.vehicles.list) {
-      const dx = v.x - c.x, dz = v.z - c.z;
-      if (dx * dx + dz * dz > 30) continue;
-      if (c.y > v.y + v.H - 0.2) continue;
-      const col = circleOBB(c.x, c.z, 0.38, v.obb);
-      if (col) {
-        const vs = v.speed;
-        if (vs > 7 && this.invuln <= 0) {
-          // run over!
-          this.hurt(vs * 2.8, v.driver === 'player' ? null : v, v.vx / vs, v.vz / vs, 'body', false, vs * 0.6);
-          this.invuln = 0.6;
-          c.vx = v.vx * 0.7; c.vz = v.vz * 0.7; this.vy = 4; this.grounded = false;
-        }
-        c.x += col.nx * col.depth; c.z += col.nz * col.depth;
-        // stand on car roof
+    const aiming = !w.melee && (ctl.aim || ctl.fire || g.input.isTouch && ctl.fire);
+    // movement relative to camera
+    const cy = cam.yaw;
+    const fx = Math.sin(cy), fz = Math.cos(cy);
+    let mx = fx * ctl.y - fz * ctl.x, mz = fz * ctl.y + fx * ctl.x;
+    const ml = Math.hypot(mx, mz);
+    if (ml > 1) { mx /= ml; mz /= ml; }
+    const moving = ml > 0.1 && this.action <= 0;
+    const sprint = ctl.sprint && !aiming;
+    const speed = moving ? (aiming ? 2.2 : sprint ? 7.2 : ml > 0.6 ? 4.4 : 1.8) * Math.min(1, ml) : 0;
+    if (moving) {
+      this.pos.x += mx * speed * dt; this.pos.z += mz * speed * dt;
+      if (!aiming) {
+        const yaw = Math.atan2(mx, mz);
+        let d = yaw - this.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+        this.yaw += d * Math.min(1, dt * 12);
       }
     }
-    // vertical
-    const gh = groundHeight(c.x, c.z);
-    if (input.pressed('jump') && this.grounded) { this.vy = 5.6; this.grounded = false; G.audio && G.audio.ui('jump'); }
-    if (!this.grounded) {
-      this.vy -= 18 * dt; c.y += this.vy * dt;
-      if (c.y <= gh) { c.y = gh; this.grounded = true; this.vy = 0; }
-    } else {
-      if (gh > c.y - 0.6 && gh < c.y + 0.5) c.y = damp(c.y, gh, 25, dt);
-      else if (gh < c.y - 0.6) this.grounded = false;
+    if (aiming) this.yaw = cy;
+    this.root.rotation.y = this.yaw;
+    g.world.collide(this.pos, 0.35, 1.75, _col);
+    // car bodies block the player
+    for (const v of g.vehicles()) {
+      const dx = this.pos.x - v.pos.x, dz = this.pos.z - v.pos.z;
+      const lx = dx * Math.cos(v.yaw) - dz * Math.sin(v.yaw), lz = dx * Math.sin(v.yaw) + dz * Math.cos(v.yaw);
+      const hx = v.width / 2 + 0.3, hz = v.length / 2 + 0.3;
+      if (Math.abs(lx) < hx && Math.abs(lz - v.offsetZ) < hz && Math.abs(this.pos.y - v.pos.y) < 1.8) {
+        const px = hx - Math.abs(lx), pz = hz - Math.abs(lz - v.offsetZ);
+        if (px < pz) { const s = Math.sign(lx) * px; this.pos.x += Math.cos(v.yaw) * s; this.pos.z -= Math.sin(v.yaw) * s; }
+        else { const s = Math.sign(lz - v.offsetZ) * pz; this.pos.x += Math.sin(v.yaw) * s; this.pos.z += Math.cos(v.yaw) * s; }
+        if (v.speed > 4 && !this.knocked) this.runOver(v);
+      }
     }
-    // stand on car roof
-    // water - enter swimming
-    if (gh < -10 && c.y < WATER_Y + 0.2) {
-      this.enterWater();
-      return;
+    // gravity / ground
+    const gh = g.world.height(this.pos.x, this.pos.z, this.pos.y + 0.5, 0.6);
+    if (ctl.jump && this.grounded && this.action <= 0) {
+      this.vy = 5.2; this.grounded = false;
+      this.c.play(speed > 3 ? 'fo__player__jump_run' : 'fo__player__jump_walk', { loop: false, fade: 0.1 });
+      g.audio.play('sfx_jump', { vol: 0.5 });
     }
-    c.animate(dt, Math.hypot(c.vx, c.vz), { air: !this.grounded });
-    c.aimPitch = this.camPitch + 0.12;
-    c.sync();
-    // prompts
-    this.promptT = (this.promptT || 0) - rdt;
-    if (this.promptT <= 0) {
-      this.promptT = 0.2;
-      const v = G.vehicles.nearest(c.x, c.z, 4.2, (v) => !v.dead && !v.noEnter);
-      this.nearCar = v;
+    this.vy -= 18 * dt;
+    this.pos.y += this.vy * dt;
+    if (gh === -Infinity) {
+      if (this.pos.y < -0.6) this.swim(dt);
+    } else if (this.pos.y <= gh) {
+      if (!this.grounded && this.vy < -11) { this.hurt((-this.vy - 11) * 6); this.c.play('fo__player__jumpdown_land_roll', { loop: false, fade: 0.05 }); this.action = 0.6; }
+      this.pos.y = gh; this.vy = 0; this.grounded = true;
+    } else if (this.pos.y - gh > 0.35) this.grounded = false;
+    else if (this.grounded) this.pos.y = gh;
+
+    // animation
+    this.action -= dt;
+    if (this.action <= 0) {
+      const armed = w.aim === 'rifle' ? '_armed2handed' : '';
+      let clip;
+      if (!this.grounded && this.vy < -4) clip = 'fl__player__jumpdown_idle';
+      else if (!this.grounded) clip = null;
+      else if (!moving) clip = 'sl__player__idle' + armed;
+      else if (aiming) {
+        const back = mx * fx + mz * fz < -0.3;
+        clip = (back ? 'sl__player__backwalk' : 'sl__player__walk') + armed;
+      } else clip = speed > 6 ? 'fl__player__sprint' + armed : speed > 3 ? 'sl__player__run' + armed : 'sl__player__walk' + armed;
+      if (clip) this.c.play(clip, { timeScale: speed > 6 ? 1.1 : 1 });
     }
-    this.updateFootCam(dt, rdt);
+    if (aiming && this.reloading <= 0) this.c.overlay(`wo__player__${w.aim}9pts_${cam.pitch > 0.25 ? 'down' : cam.pitch < -0.25 ? 'up' : 'front'}`);
+    else if (this.reloading <= 0) this.c.overlay(null);
+
+    // combat
+    this.reloading -= dt;
+    if (ctl.fire && this.cool <= 0 && this.reloading <= 0) {
+      if (w.melee) this.melee(w);
+      else if (w.auto || !this.firedLast) this.shoot(w, cam);
+    }
+    this.firedLast = ctl.fire;
+    this.c.update(dt);
   }
 
-  rescueFromWater() {
-    const c = this.char;
-    let x = c.x, z = c.z;
-    const cx = (CITY.x0 + CITY.x1) / 2, cz = (CITY.z0 + CITY.z1) / 2;
-    for (let k = 0; k < 400 && !isLand(x, z); k++) { const dx = cx - x, dz = cz - z, L = Math.hypot(dx, dz); x += dx / L * 4; z += dz / L * 4; }
-    x += (cx - x) * 0.01; z += (cz - z) * 0.01;
-    c.x = x; c.z = z; c.y = Math.max(0, groundHeight(x, z)); c.vx = c.vz = 0;
-    this.swimming = false;
-    this.grounded = true;
-    this.swimStamina = 1;
-    this.hurt(15, null);
-    G.hud && G.hud.notify('你精疲力竭，被冲回了岸边…');
+  swim(dt) {
+    // original: drowning in deep water
+    this.pos.y = -1.1; this.vy = 0;
+    this.c.play('fl__player__swim_idle');
+    this.drownT = (this.drownT || 0) + dt;
+    if (this.drownT > 1.5) { this.g.audio.play('sfx_drown', { vol: 0.8 }); this.health = 0; this.g.die('drown'); this.drownT = 0; }
   }
 
-  enterWater() {
-    if (this.swimming) return;
-    this.swimming = true;
-    this.waterY = WATER_Y;
-    this.grounded = false;
-    this.vy = 0;
-    this.char.vx *= 0.3;
-    this.char.vz *= 0.3;
-    G.hud && G.hud.notify('按住方向键游泳');
-    G.audio && G.audio.splash && G.audio.splash();
+  runOver(v) {
+    const dmg = v.speed * 3.5;
+    this.hurt(dmg);
+    this.knocked = true;
+    this.c.play('fo__civilian_all__car_hit_front', { loop: false, fade: 0.05 });
+    this.action = 1.2;
+    setTimeout(() => { this.knocked = false; }, 1200);
   }
 
-  updateSwimming(dt, rdt, input) {
-    const c = this.char;
-    const mv = input.move;
-    const sprint = input.held('sprint');
-    const swimSpeed = sprint ? 4.5 : 2.8;
-    const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
-    const rx = -fz, rz = fx;
-    let wx = fx * mv.y + rx * mv.x, wz = fz * mv.y + rz * mv.x;
-    const ml = Math.hypot(wx, wz);
-    if (ml > 1) { wx /= ml; wz /= ml; }
-    c.vx = damp(c.vx || 0, wx * swimSpeed, 4, dt);
-    c.vz = damp(c.vz || 0, wz * swimSpeed, 4, dt);
-    c.x += c.vx * dt;
-    c.z += c.vz * dt;
-    const bobY = this.waterY + Math.sin(G.time * 2 + c.x * 0.5) * 0.08 - 0.4;
-    c.y = damp(c.y, bobY, 6, dt);
-    if (sprint && ml > 0.1) this.swimStamina -= dt * 0.12;
-    else if (ml > 0.1) this.swimStamina -= dt * 0.03;
-    else this.swimStamina -= dt * 0.015;
-    this.swimStamina = clamp(this.swimStamina, 0, 1);
-    if (this.swimStamina <= 0) {
-      c.y -= dt * 0.5;
-      if (c.y < this.waterY - 2) { this.rescueFromWater(); return; }
-    }
-    const gh = groundHeight(c.x, c.z);
-    if (gh > -2 && isLand(c.x, c.z)) {
-      c.y = Math.max(0, gh);
-      this.swimming = false;
-      this.grounded = true;
-      this.vy = 0;
-      G.hud && G.hud.notify('');
-      return;
-    }
-    if (ml > 0.1) c.h = dampAngle(c.h, Math.atan2(wx, wz), 6, dt);
-    c.animate(dt, Math.hypot(c.vx, c.vz) * 0.5, { air: false });
-    c.sync();
-    const push = G.world.statics.collideCircle(c.x, c.z, 0.38, c.y, this._push || (this._push = {}));
-    if (push) { c.x += push.x; c.z += push.z; }
-    this.updateFootCam(dt, rdt);
-  }
-
-  updateFootCam(dt, rdt) {
-    const c = this.char;
-    const aiming = c.aim;
-    const tDist = aiming ? 1.9 : [3.8, 5.2, 2.6][this.camMode] || 3.8;
-    this.camDist = damp(this.camDist, tDist, 10, rdt);
-    const shoulder = aiming ? 0.62 : 0.45;
-    const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
-    const rx = -fz, rz = fx;
-    this.recoilPitch = (this.recoilPitch || 0) * Math.exp(-rdt * 7);
-    const pitch = clamp(this.camPitch + this.recoilPitch, -1.2, 0.95);
-    const cp = Math.cos(pitch), sp = Math.sin(pitch);
-    const dirx = fx * cp, diry = sp, dirz = fz * cp;
-    const pivot = tmpV.set(c.x + rx * shoulder, c.y + 1.62, c.z + rz * shoulder);
-    let dist = this.camDist;
-    const hit = G.world.statics.raycast(pivot.x, pivot.y, pivot.z, -dirx, -diry, -dirz, dist + 0.3);
-    if (hit) dist = Math.max(0.4, hit.t - 0.3);
-    const cam = G.camera;
-    const tx = pivot.x - dirx * dist, ty = Math.max(pivot.y - diry * dist, groundHeight(pivot.x - dirx * dist, pivot.z - dirz * dist) + 0.3), tz = pivot.z - dirz * dist;
-    cam.position.set(tx, ty, tz);
-    cam.lookAt(pivot.x + dirx * 10, pivot.y + diry * 10, pivot.z + dirz * 10);
-    this.applyShake(rdt);
-  }
-
-  updateDeadCam(rdt) {
-    const c = this.char;
-    const cam = G.camera;
-    this.camYaw += rdt * 0.25;
-    const d = 7;
-    cam.position.set(c.x - Math.sin(this.camYaw) * d, c.y + 4.5, c.z - Math.cos(this.camYaw) * d);
-    cam.lookAt(c.x, c.y + 0.5, c.z);
-    c.animate(rdt, 0);
-  }
-
-  applyShake(rdt) {
-    const s = G.fx ? G.fx.shake : 0;
-    if (s > 0) {
-      const cam = G.camera;
-      cam.position.x += (Math.random() - 0.5) * s * 0.4;
-      cam.position.y += (Math.random() - 0.5) * s * 0.4;
-      cam.rotation.z += (Math.random() - 0.5) * s * 0.02;
-    }
-  }
-
-  updateCameraFov(rdt) {
-    let fov = G.settings.fov;
-    const v = this.inVehicle;
-    if (v) fov += clamp(v.speed / v.t.top, 0, 1.2) * 12 + (v.nitroOn ? 8 : 0);
-    if (this.char.aim) fov -= 15;
-    const isSniper = this.char.aim && WEAPONS[this.weapon] && WEAPONS[this.weapon].scope;
-    if (isSniper) fov -= 25;
-    if (G.hud && G.hud.scopeOverlay) G.hud.scopeOverlay(isSniper);
-    const cam = G.camera;
-    const nf = damp(cam.fov, fov, 5, rdt);
-    if (Math.abs(nf - cam.fov) > 0.01) { cam.fov = nf; cam.updateProjectionMatrix(); }
-  }
-
-  updateDriving(dt, rdt, input) {
-    const v = this.inVehicle;
-    const mv = input.move;
-    let throttle = mv.y;
-    if (input.throttleAxis !== null && input.throttleAxis !== undefined) throttle = input.throttleAxis;
-    v.input.throttle = throttle;
-    v.input.steer = mv.x;
-    v.input.handbrake = input.held('jump');
-    v.input.nitro = input.held('sprint');
-    if (input.pressed('horn')) { G.audio && G.audio.horn(); G.events.emit('horn', v); }
-    if (input.pressed('radio')) G.audio && G.audio.nextStation();
-    if (input.pressed('cam')) this.camMode = (this.camMode + 1) % 3;
-    // nitro FX
-    if (v.nitroOn) {
-      const fx = Math.sin(v.h), fz = Math.cos(v.h);
-      for (const s of [-0.4, 0.4]) G.fx.nitroFlame(v.x - fx * v.t.L * 0.5 - Math.cos(v.h) * s, v.y + 0.35, v.z - fz * v.t.L * 0.5 + Math.sin(v.h) * s, fx, fz);
-    }
-    // keep char with car (hidden) for systems that read position
-    this.char.x = v.x; this.char.z = v.z; this.char.y = v.y;
-    // skid marks + tire smoke
-    this.tireEffects(v, dt);
-    this.updateDrift(v, dt, rdt);
-    this.updateStunt(v, dt, rdt);
-    // headlight
-    const night = G.sky ? G.sky.night : 0;
-    const hl = this.headlight;
-    hl.intensity = v.dead ? 0 : night * 110 + (G.sky && G.sky.rain > 0.3 ? 30 : 0);
-    const fx = Math.sin(v.h), fz = Math.cos(v.h);
-    hl.position.set(v.x + fx * v.t.L * 0.5, v.y + 0.8, v.z + fz * v.t.L * 0.5);
-    hl.target.position.set(v.x + fx * 25, v.y - 1, v.z + fz * 25);
-    hl.target.updateMatrixWorld();
-    this.updateCarCam(v, dt, rdt, input);
-    if (v.dead && v.burning <= 0 && v.hp <= 0 && !this.char.dead) {
-      // exploded with us inside
-      if (v.sinking > 0) { this.exitVehicle(true); this.rescueFromWater(); }
-      else { this.exitVehicle(true); this.hurt(999, v.lastAttacker || null); }
-    }
-    if (v.sinking > 1.2 && this.inVehicle) { this.exitVehicle(true); this.rescueFromWater(); }
-    G.save.stats.distance += v.speed * dt;
-    if (v.t.boat) G.save.stats.distanceWater = (G.save.stats.distanceWater || 0) + v.speed * dt;
-    else G.save.stats.distanceCar = (G.save.stats.distanceCar || 0) + v.speed * dt;
-    if (!G.save.stats.vehiclesDriven) G.save.stats.vehiclesDriven = {};
-    G.save.stats.vehiclesDriven[v.typeKey] = true;
-  }
-
-  tireEffects(v, dt) {
-    const fx = Math.sin(v.h), fz = Math.cos(v.h), rx = -Math.cos(v.h), rz = Math.sin(v.h);
-    const wheels = [];
-    const hw = v.t.Wd / 2 - 0.15, rz0 = (v.t.wb - 0.5) * v.t.L;
-    for (const s of [-1, 1]) wheels.push({ x: v.x + rx * s * hw + fx * rz0, z: v.z + rz * s * hw + fz * rz0 });
-    const slipping = v.grounded && (v.drifting || (v.input.handbrake && v.speed > 5) || (Math.abs(v.input.throttle) > 0.8 && Math.abs(v.vF) < 6 && v.input.throttle * v.vF >= 0));
-    if (slipping && this.prevWheels) {
-      for (let k = 0; k < 2; k++) G.fx.skidMark(this.prevWheels[k].x, this.prevWheels[k].z, wheels[k].x, wheels[k].z, v.y);
-      if (Math.random() < 0.6) G.fx.tireSmoke(wheels[Math.random() < 0.5 ? 0 : 1].x, v.y + 0.2, wheels[0].z * 0.5 + wheels[1].z * 0.5);
-    }
-    this.prevWheels = wheels;
-    this.slip = slipping ? Math.min(1, Math.abs(v.vR) / 8 + 0.3) : 0;
-  }
-
-  updateDrift(v, dt, rdt) {
-    const D = this.drift;
-    if (v.drifting && v.grounded && v.speed > 9) {
-      D.active = true; D.idle = 0;
-      D.t += dt;
-      D.score += dt * v.speed * Math.abs(v.vR) * 0.9 * D.mult;
-      if (D.t > 2.2 * D.mult && D.mult < 8) { D.mult++; G.audio && G.audio.ui('combo'); }
-    } else if (D.active) {
-      D.idle += dt;
-      if (D.idle > 1.0) this.bankDrift();
-    }
-  }
-  bankDrift(failed = false) {
-    const D = this.drift;
-    if (!D.active) return;
-    const pts = Math.floor(D.score);
-    if (!failed && pts > 150) {
-      const cash = Math.floor(pts / 25);
-      G.addMoney(cash);
-      this.inVehicle && (this.inVehicle.nitro = Math.min(this.inVehicle.nitroMax || 0, (this.inVehicle.nitro || 0) + pts / 6000));
-      this.focus = Math.min(1, this.focus + pts / 8000);
-      if (pts > G.save.stats.bestDrift) G.save.stats.bestDrift = pts;
-      G.hud && G.hud.driftBank(pts, cash);
-      G.events.emit('driftBanked', pts);
-    } else if (failed && pts > 150) G.hud && G.hud.driftFail();
-    D.active = false; D.score = 0; D.mult = 1; D.t = 0; D.idle = 0;
-  }
-
-  updateStunt(v, dt, rdt) {
-    if (!v.grounded && !this.stunt && v.airTime > 0.05 && v.y > 0.6) {
-      // launched
-      const ramp = G.world.rampList.find((r) => Math.hypot(r.x - v.x, r.z - v.z) < 14);
-      this.stunt = { t: 0, ramp, maxY: v.y, startX: v.x, startZ: v.z };
-      if (ramp && v.speed > 15) G.timeScaleTarget = 0.35;
-    }
-    if (this.stunt) {
-      const s = this.stunt;
-      s.t += dt; s.maxY = Math.max(s.maxY, v.y);
-      if (v.grounded) {
-        G.timeScaleTarget = 1;
-        const dist = Math.hypot(v.x - s.startX, v.z - s.startZ);
-        if (s.t > 0.8 && !v.dead) {
-          const cash = Math.floor(dist * 4 + s.maxY * 20 + s.t * 50);
-          G.addMoney(cash);
-          let title = '特技飞跃';
-          if (s.ramp && !G.save.stunts.includes(s.ramp.id) && s.t > 1.0) {
-            G.save.stunts.push(s.ramp.id);
-            title = '独特特技：' + s.ramp.name;
-            G.addMoney(1000);
-          }
-          G.hud && G.hud.stunt(title, dist, s.maxY, s.t, cash);
-          this.focus = Math.min(1, this.focus + 0.1);
-        }
-        this.stunt = null;
+  melee(w) {
+    const g = this.g;
+    this.cool = w.rate;
+    this.action = 0.35;
+    const n = 1 + Math.floor(Math.random() * 3);
+    this.c.play(this.weapon === 'bat' ? `fo__player__bat_hit_0${n}` : `fo__player__melee_hit_0${n}`, { loop: false, fade: 0.05, timeScale: 1.4 });
+    g.audio.play(w.snd || 'sfx_combat_punch_woosh', { vol: 0.5 });
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    for (const p of g.peds.list) {
+      if (p.dead) continue;
+      const dx = p.pos.x - this.pos.x, dz = p.pos.z - this.pos.z, d = Math.hypot(dx, dz);
+      if (d < w.range && (dx * fx + dz * fz) / (d || 1) > 0.4) {
+        g.audio.play(this.weapon === 'bat' ? 'sfx_baseballbat_hit' : 'sfx_combat_punch', { vol: 0.8 });
+        g.peds.damage(p, w.dmg, this.pos, 'melee');
+        p.pos.x += fx * 0.4; p.pos.z += fz * 0.4;
+        g.crime(p.kind === 'cop' ? 'hitcop' : 'assault', p.pos);
+        if (p.onHit) p.onHit('melee');
+        break;
       }
     }
   }
 
-  updateCarCam(v, dt, rdt, input) {
-    const cam = G.camera;
-    const back = input.held('lookback');
-    if (G.time - this.lastMouse > 1.6) {
-      this.carCamYawOff = damp(this.carCamYawOff, 0, 2.5, rdt);
-      this.carCamPitch = damp(this.carCamPitch, 0.2, 2, rdt);
+  /** Over-the-shoulder hitscan from the camera crosshair. */
+  shoot(w, cam) {
+    const g = this.g;
+    const slot = this.weapons[this.weapon];
+    if (slot.clip <= 0) {
+      if (slot.ammo > 0) return this.reload(w, slot);
+      g.audio.play('sfx_weapon_dry', { vol: 0.6 });
+      this.cool = 0.4;
+      return;
     }
-    // follow direction of velocity for drift feel
-    let baseYaw = v.h;
-    if (v.speed > 4 && v.vF > 0) baseYaw = dampAngle(v.h, Math.atan2(v.vx, v.vz), 1, 0.35);
-    this.carYawSmooth = this.carYawSmooth == null ? baseYaw : dampAngle(this.carYawSmooth, baseYaw, 5, rdt);
-    const yaw = this.carYawSmooth + this.carCamYawOff + (back ? Math.PI : 0);
-    const dists = [1.65, 2.3, 1.15];
-    const dist = v.t.L * dists[this.camMode] + 1.5 + clamp(v.speed / 50, 0, 1) * 1.5;
-    const h = v.H * 0.75 + 1.0 + this.carCamPitch * dist * 0.6;
-    const tx = v.x - Math.sin(yaw) * dist, tz = v.z - Math.cos(yaw) * dist;
-    let ty = v.y + h;
-    // collide
-    const pv = tmpV.set(v.x, v.y + 1.6, v.z);
-    const dx = tx - pv.x, dy = ty - pv.y, dz = tz - pv.z, L = Math.hypot(dx, dy, dz);
-    const hit = G.world.statics.raycast(pv.x, pv.y, pv.z, dx / L, dy / L, dz / L, L);
-    let fxp = tx, fyp = ty, fzp = tz;
-    if (hit && !hit.ground) { const t = Math.max(1, hit.t - 0.4); fxp = pv.x + dx / L * t; fyp = pv.y + dy / L * t; fzp = pv.z + dz / L * t; }
-    const k = 1 - Math.exp(-rdt * 12);
-    if (!this.carCamInit) { cam.position.set(fxp, fyp, fzp); this.carCamInit = true; }
-    cam.position.x += (fxp - cam.position.x) * k;
-    cam.position.y += (Math.max(fyp, v.y + 0.8) - cam.position.y) * k;
-    cam.position.z += (fzp - cam.position.z) * k;
-    cam.lookAt(v.x + Math.sin(yaw) * 3, v.y + 1.1, v.z + Math.cos(yaw) * 3);
-    this.camYaw = yaw;
-    this.applyShake(rdt);
+    slot.clip--;
+    this.cool = w.rate;
+    g.audio.play(w.snd, { vol: 0.85, rate: 0.95 + Math.random() * 0.1 });
+    g.camera.shake(w.explosive ? 0.6 : w.dmg > 60 ? 0.35 : 0.12);
+    // muzzle position
+    const gun = this.gunModels[this.weapon];
+    (gun || this.hand).getWorldPosition(_o);
+    _o.y += 0.05;
+    // direction from camera through crosshair (+ spread)
+    const camObj = g.camera.cam;
+    camObj.getWorldDirection(_d);
+    _d.x += (Math.random() - 0.5) * w.spread * 2; _d.y += (Math.random() - 0.5) * w.spread * 2; _d.z += (Math.random() - 0.5) * w.spread * 2;
+    _d.normalize();
+    // touch: soft auto-aim to nearest target in a cone
+    const tgt = g.input.isTouch ? g.autoAim(camObj.position, _d, 0.93) : null;
+    if (tgt) _d.copy(tgt).sub(camObj.position).normalize();
+    const hit = g.hitscan(camObj.position, _d, 400, this);
+    const end = hit ? hit.point : _v.copy(camObj.position).addScaledVector(_d, 400);
+    g.fx.muzzle(_o, _d);
+    if (w.explosive) {
+      g.rocket(_o, end);
+    } else {
+      g.fx.tracer(_o, end);
+      if (hit) g.applyHit(hit, w.dmg, this.pos, 'bullet');
+    }
+    g.peds.panic(this.pos.x, this.pos.z, 45);
+    g.crime('gunfire', this.pos);
+    if (slot.clip <= 0 && slot.ammo > 0) setTimeout(() => this.reload(w, slot), 250);
+  }
+
+  reload(w, slot) {
+    if (this.reloading > 0 || slot.ammo <= 0) return;
+    this.reloading = w.aim === 'rifle' ? 1.6 : 1.1;
+    this.g.audio.play(w.reload, { vol: 0.7 });
+    this.c.overlay(w.aim === 'rifle' ? (this.weapon === 'rpg' ? 'so__player__gun_bazooka_reload' : 'so__player__gun_rifle_reload') : 'so__player__gun_1handed_reload', { loop: false });
+    const n = Math.min(w.clip - slot.clip, slot.ammo);
+    setTimeout(() => { slot.clip += n; slot.ammo -= n; }, this.reloading * 900);
+  }
+
+  drive(dt, ctl) {
+    const g = this.g, v = this.vehicle;
+    if (ctl.enter && v.speed < 6) { this.exit(); return; }
+    const c = { throttle: ctl.y, steer: ctl.x, handbrake: ctl.handbrake, up: ctl.handbrake, down: ctl.sprint };
+    v.update(dt, c, g.world);
+    if (v.impact > 3) {
+      g.audio.play(v.impact > 12 ? 'sfx_car_impact_hard' : v.impact > 6 ? 'sfx_car_impact_medium' : 'sfx_car_impact_small', { vol: Math.min(1, v.impact / 12) });
+      g.camera.shake(Math.min(0.6, v.impact / 25));
+    }
+    if (ctl.horn) { if (!this.honking) { this.honking = true; g.audio.loop('horn', 'sfx_npc_horn'); g.audio.setLoop('horn', 0.7); g.peds.panic(v.pos.x, v.pos.z, 12); } }
+    else if (this.honking) { this.honking = false; g.audio.stopLoop('horn'); }
+    if (ctl.radio) g.hud.notify(g.audio.cycleStation(), 2);
+    g.audio.engine(v.def.engine, v.rpm, ctl.y, v.health > 0);
+    // skids
+    const skid = ctl.handbrake && v.speed > 8 || Math.abs(v.vs) > 4;
+    if (skid && !this.skidding) { this.skidding = true; g.audio.loop('skid', 'sfx_skid_long'); }
+    if (this.skidding) g.audio.setLoop('skid', skid ? Math.min(0.8, v.speed / 25) : 0);
+    if (!skid) this.skidding = false;
+    if (v.health <= 300) g.fx.smokeFrom(v.pos.x, v.pos.y + 1.2, v.pos.z + 0, v.health < 120);
+    if (v.health <= 0 && !v.exploded) g.explodeVehicle(v);
+    this.c.update(dt);
   }
 }
+

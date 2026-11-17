@@ -1,151 +1,111 @@
-// Unified input: keyboard + mouse (pointer lock), gamepad, touch.
-import { clamp } from './util.js';
-
-const KEYMAP = {
-  fire: [], aim: [], jump: ['Space'], sprint: ['ShiftLeft', 'ShiftRight'], enter: ['KeyF', 'Enter'],
-  weapon: ['KeyQ'], focus: ['KeyE'], horn: ['KeyH'], radio: ['KeyR'], pause: ['Escape', 'KeyM'], photo: ['KeyP'],
-  taxi: ['KeyT'], cam: ['KeyC'], lookback: ['KeyV'], interact: ['KeyF'], grenade: ['KeyG'], phone: ['KeyN'],
-  w1: ['Digit1'], w2: ['Digit2'], w3: ['Digit3'], w4: ['Digit4'], w5: ['Digit5'], w6: ['Digit6'], w7: ['Digit7'],
-};
-
+// Keyboard + mouse + touch input, merged into one control state.
 export class Input {
   constructor(canvas) {
-    this.canvas = canvas;
     this.keys = new Set();
-    this.down = {}; this.prev = {};
-    this.mouse = { dx: 0, dy: 0, b0: false, b2: false, wheel: 0 };
-    this.move = { x: 0, y: 0 };
-    this.look = { x: 0, y: 0 };
-    this.touchMode = false;
-    this.touch = { stick: { x: 0, y: 0, id: null, cx: 0, cy: 0 }, look: { id: null, lx: 0, ly: 0 }, btn: {} };
-    this.gp = null;
-    this.locked = false;
-    this.enabled = true;
-
+    this.pressed = new Set();
+    this.mouse = { dx: 0, dy: 0, down: false, right: false, wheel: 0 };
+    this.touch = { move: { x: 0, y: 0 }, look: { dx: 0, dy: 0 }, buttons: new Set(), tapped: new Set() };
+    this.canvas = canvas;
     addEventListener('keydown', (e) => {
-      if (e.code === 'Tab') e.preventDefault();
-      this.keys.add(e.code);
-      if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
+      if (e.repeat) return;
+      this.keys.add(e.code); this.pressed.add(e.code);
+      if (['Space', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code)) e.preventDefault();
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
-    addEventListener('blur', () => { this.keys.clear(); this.mouse.b0 = this.mouse.b2 = false; });
+    addEventListener('blur', () => this.keys.clear());
     canvas.addEventListener('mousedown', (e) => {
-      if (this.touchMode) return;
-      if (!this.locked && this.wantLock) this.lock();
-      if (e.button === 0) this.mouse.b0 = true;
-      if (e.button === 2) this.mouse.b2 = true;
+      if (this.locked !== false && document.pointerLockElement !== canvas && !this.isTouch) canvas.requestPointerLock?.();
+      if (e.button === 0) this.mouse.down = true;
+      if (e.button === 2) this.mouse.right = true;
     });
-    addEventListener('mouseup', (e) => { if (e.button === 0) this.mouse.b0 = false; if (e.button === 2) this.mouse.b2 = false; });
-    addEventListener('contextmenu', (e) => e.preventDefault());
+    addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.mouse.down = false;
+      if (e.button === 2) this.mouse.right = false;
+    });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('mousemove', (e) => {
-      // with pointer lock: free look. Without (e.g. blocked in an embedded frame): drag with any button held to look
-      if (this.locked || (this.wantLock && !this.touchMode && (this.mouse.b0 || this.mouse.b2) && e.target === canvas)) {
-        this.mouse.dx += e.movementX; this.mouse.dy += e.movementY;
-      }
+      if (document.pointerLockElement === canvas) { this.mouse.dx += e.movementX; this.mouse.dy += e.movementY; }
     });
     addEventListener('wheel', (e) => { this.mouse.wheel += Math.sign(e.deltaY); }, { passive: true });
-    document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === canvas; });
-
-    // touch
-    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) this.setupTouch();
+    this.isTouch = matchMedia('(pointer: coarse)').matches;
+    if (this.isTouch) this.buildTouch();
   }
 
-  lock() {
-    try {
-      const p = this.canvas.requestPointerLock && this.canvas.requestPointerLock();
-      if (p && p.catch) p.catch(() => {});
-    } catch (e) { /* pointer lock unavailable: drag-to-look fallback is used */ }
-  }
-
-  setupTouch() {
-    const stick = document.getElementById('stick'), knob = document.getElementById('stickknob');
-    const T = this.touch;
-    const startTouch = () => { if (!this.touchMode) { this.touchMode = true; document.body.classList.add('touch'); this.onTouchMode && this.onTouchMode(); } };
-    stick.addEventListener('touchstart', (e) => {
-      startTouch(); e.preventDefault();
-      const t = e.changedTouches[0]; const r = stick.getBoundingClientRect();
-      T.stick.id = t.identifier; T.stick.cx = r.left + r.width / 2; T.stick.cy = r.top + r.height / 2;
-    }, { passive: false });
+  buildTouch() {
+    const ui = document.createElement('div');
+    ui.id = 'touch';
+    ui.innerHTML = `
+      <div class="stick" id="stick"><div class="knob"></div></div>
+      <div class="tbtns">
+        <button data-b="fire">开火</button><button data-b="jump">跳</button>
+        <button data-b="enter">上车</button><button data-b="sprint">冲刺</button>
+        <button data-b="handbrake">手刹</button><button data-b="weapon">武器</button>
+      </div>`;
+    document.body.appendChild(ui);
+    const stick = ui.querySelector('#stick'), knob = stick.querySelector('.knob');
+    let sid = null, sx = 0, sy = 0, lid = null, lx = 0, ly = 0;
+    addEventListener('touchstart', (e) => {
+      for (const t of e.changedTouches) {
+        const b = t.target.closest?.('button[data-b]');
+        if (b) { this.touch.buttons.add(b.dataset.b); this.touch.tapped.add(b.dataset.b); continue; }
+        if (t.clientX < innerWidth * 0.45 && sid === null) { sid = t.identifier; sx = t.clientX; sy = t.clientY; stick.style.left = sx - 60 + 'px'; stick.style.top = sy - 60 + 'px'; stick.classList.add('on'); }
+        else if (lid === null) { lid = t.identifier; lx = t.clientX; ly = t.clientY; }
+      }
+    }, { passive: true });
     addEventListener('touchmove', (e) => {
       for (const t of e.changedTouches) {
-        if (t.identifier === T.stick.id) {
-          const dx = (t.clientX - T.stick.cx) / 60, dy = (t.clientY - T.stick.cy) / 60;
-          const L = Math.hypot(dx, dy), s = L > 1 ? 1 / L : 1;
-          T.stick.x = dx * s; T.stick.y = dy * s;
-          knob.style.transform = `translate(${T.stick.x * 50}px, ${T.stick.y * 50}px)`;
-        } else if (t.identifier === T.look.id) {
-          this.mouse.dx += (t.clientX - T.look.lx) * 2.2; this.mouse.dy += (t.clientY - T.look.ly) * 2.2;
-          T.look.lx = t.clientX; T.look.ly = t.clientY;
+        if (t.identifier === sid) {
+          let dx = (t.clientX - sx) / 50, dy = (t.clientY - sy) / 50;
+          const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; }
+          this.touch.move.x = dx; this.touch.move.y = dy;
+          knob.style.transform = `translate(${dx * 40}px, ${dy * 40}px)`;
+        } else if (t.identifier === lid) {
+          this.touch.look.dx += (t.clientX - lx) * 1.5; this.touch.look.dy += (t.clientY - ly) * 1.5; lx = t.clientX; ly = t.clientY;
         }
       }
-    }, { passive: false });
+    }, { passive: true });
     const end = (e) => {
       for (const t of e.changedTouches) {
-        if (t.identifier === T.stick.id) { T.stick.id = null; T.stick.x = T.stick.y = 0; knob.style.transform = ''; }
-        if (t.identifier === T.look.id) T.look.id = null;
+        const b = t.target.closest?.('button[data-b]');
+        if (b) this.touch.buttons.delete(b.dataset.b);
+        if (t.identifier === sid) { sid = null; this.touch.move.x = this.touch.move.y = 0; knob.style.transform = ''; stick.classList.remove('on'); }
+        if (t.identifier === lid) lid = null;
       }
     };
     addEventListener('touchend', end); addEventListener('touchcancel', end);
-    this.canvas.addEventListener('touchstart', (e) => {
-      startTouch(); e.preventDefault();
-      for (const t of e.changedTouches) {
-        if (t.clientX > innerWidth * 0.35 && T.look.id === null) { T.look.id = t.identifier; T.look.lx = t.clientX; T.look.ly = t.clientY; }
-      }
-    }, { passive: false });
-    document.querySelectorAll('#tbtns .tb').forEach((b) => {
-      const k = b.dataset.k;
-      b.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); T.btn[k] = true; }, { passive: false });
-      b.addEventListener('touchend', (e) => { e.preventDefault(); T.btn[k] = false; }, { passive: false });
-    });
-    document.getElementById('tpause').addEventListener('touchstart', (e) => { e.preventDefault(); T.btn.pause = true; setTimeout(() => (T.btn.pause = false), 120); }, { passive: false });
   }
 
-  key(name) {
-    const codes = KEYMAP[name];
-    if (codes) for (const c of codes) if (this.keys.has(c)) return true;
-    return false;
+  down(...codes) { return codes.some((c) => this.keys.has(c)); }
+  hit(...codes) { return codes.some((c) => this.pressed.has(c)); }
+
+  /** Normalised controls for this frame. */
+  state() {
+    const t = this.touch;
+    const s = {
+      x: (this.down('KeyD', 'ArrowRight') ? 1 : 0) - (this.down('KeyA', 'ArrowLeft') ? 1 : 0) + t.move.x,
+      y: (this.down('KeyW', 'ArrowUp') ? 1 : 0) - (this.down('KeyS', 'ArrowDown') ? 1 : 0) - t.move.y,
+      lookX: this.mouse.dx + t.look.dx, lookY: this.mouse.dy + t.look.dy,
+      fire: this.mouse.down || t.buttons.has('fire') || this.down('KeyJ'),
+      aim: this.mouse.right,
+      sprint: this.down('ShiftLeft', 'ShiftRight') || t.buttons.has('sprint'),
+      handbrake: this.down('Space') || t.buttons.has('handbrake'),
+      jump: this.hit('Space') || t.tapped.has('jump'),
+      enter: this.hit('KeyF', 'Enter') || t.tapped.has('enter'),
+      weaponNext: this.hit('KeyQ', 'KeyE') || this.mouse.wheel !== 0 || t.tapped.has('weapon'),
+      horn: this.down('KeyH'),
+      radio: this.hit('KeyR'),
+      map: this.hit('KeyM', 'Tab'),
+      pause: this.hit('Escape', 'KeyP'),
+      camera: this.hit('KeyC', 'KeyV'),
+    };
+    s.x = Math.max(-1, Math.min(1, s.x)); s.y = Math.max(-1, Math.min(1, s.y));
+    return s;
   }
 
-  poll() {
-    // compute logical button states
-    const d = {};
-    for (const n in KEYMAP) d[n] = this.key(n);
-    d.fire = this.mouse.b0; d.aim = this.mouse.b2;
-    const T = this.touch;
-    for (const k in T.btn) if (T.btn[k]) d[k] = true;
-    if (T.btn.fire) d.aim = true; // touch fire implies aim
-    let mx = 0, my = 0;
-    if (this.key('dummy')) mx = 0;
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mx -= 1;
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mx += 1;
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) my += 1;
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) my -= 1;
-    if (T.stick.id !== null) { mx = T.stick.x; my = -T.stick.y; }
-    let lx = this.mouse.dx, ly = this.mouse.dy;
-    this.mouse.dx = this.mouse.dy = 0;
-    // gamepad
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const gp = pads && [...pads].find((p) => p && p.connected);
-    this.gpActive = false;
-    this.throttleAxis = null;
-    if (gp) {
-      const dz = (v) => (Math.abs(v) < 0.15 ? 0 : v);
-      const ax = dz(gp.axes[0]), ay = dz(gp.axes[1]), rx = dz(gp.axes[2]), ry = dz(gp.axes[3]);
-      if (ax || ay) { mx = ax; my = -ay; this.gpActive = true; }
-      if (rx || ry) { lx += rx * 14; ly += ry * 10; this.gpActive = true; }
-      const b = (i) => gp.buttons[i] && gp.buttons[i].pressed;
-      const v = (i) => (gp.buttons[i] ? gp.buttons[i].value : 0);
-      if (b(7)) d.fire = true; if (b(6)) d.aim = true;
-      if (b(0)) d.jump = true; if (b(3)) d.enter = true; if (b(10)) d.sprint = true; if (b(2)) d.sprint = true;
-      if (b(5)) d.weapon = true; if (b(4)) d.focus = true; if (b(9)) d.pause = true; if (b(11)) d.horn = true;
-      if (b(1)) d.cam = true; if (b(12)) d.radio = true; if (b(13)) d.lookback = true;
-      if (v(7) > 0.05 || v(6) > 0.05) { this.throttleAxis = v(7) - v(6); this.gpActive = true; }
-    }
-    this.move.x = clamp(mx, -1, 1); this.move.y = clamp(my, -1, 1);
-    this.look.x = lx; this.look.y = ly;
-    this.prev = this.down; this.down = d;
-    this.wheel = this.mouse.wheel; this.mouse.wheel = 0;
+  endFrame() {
+    this.pressed.clear();
+    this.mouse.dx = this.mouse.dy = this.mouse.wheel = 0;
+    this.touch.look.dx = this.touch.look.dy = 0;
+    this.touch.tapped.clear();
   }
-  pressed(n) { return this.down[n] && !this.prev[n]; }
-  held(n) { return !!this.down[n]; }
 }

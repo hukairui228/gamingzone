@@ -1,152 +1,195 @@
-// Renderer + post-processing chain (HDR, MSAA, GTAO, bloom, warm grading).
 import * as THREE from 'three';
+import { Sky } from 'three/addons/objects/Sky.js';
+import { Water } from 'three/addons/objects/Water.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { setAnisotropy, texture } from './assets.js';
+import { nightUniform } from './city.js';
 
-const GradeShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    uTime: { value: 0 },
-    uVignette: { value: 0.35 },
-    uBlur: { value: 0 },
-    uSat: { value: 1.08 },
-    uFocus: { value: 0 },
-    uDamage: { value: 0 },
-    uFilter: { value: 0 },
-    uGrain: { value: 0.012 },
-    uNight: { value: 0 },
-  },
-  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-  fragmentShader: /* glsl */`
-uniform sampler2D tDiffuse; uniform float uTime, uVignette, uBlur, uSat, uFocus, uDamage, uFilter, uGrain, uNight;
-varying vec2 vUv;
-float rnd(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
-void main(){
-  vec2 uv = vUv;
-  vec4 c = texture2D(tDiffuse, uv);
-  // radial speed blur (driving fast)
-  if (uBlur > 0.001) {
-    vec2 d = (uv - 0.5) * uBlur * 0.05;
-    vec3 acc = c.rgb;
-    for (int i = 1; i < 6; i++) acc += texture2D(tDiffuse, uv - d * float(i)).rgb;
-    float m = smoothstep(0.15, 0.5, length(uv - 0.5));
-    c.rgb = mix(c.rgb, acc / 6.0, m);
-  }
-  // chromatic aberration: only on damage
-  float ca = uDamage * 0.005;
-  if (ca > 0.0005) {
-    c.r = texture2D(tDiffuse, uv + (uv - 0.5) * ca).r;
-    c.b = texture2D(tDiffuse, uv - (uv - 0.5) * ca).b;
-  }
-  // color grading: warm sunlit feel — warm shadows, slightly golden highlights
-  float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
-  c.rgb = mix(vec3(l), c.rgb, uSat);
-  // warm tint: orange-ish shadows, golden highlights (like Gangstar original)
-  float dayGrade = 1.0 - uNight;
-  c.rgb += vec3(0.015, 0.005, -0.01) * (1.0 - l) * dayGrade; // warm shadows
-  c.rgb += vec3(0.01, 0.005, -0.008) * l * dayGrade;          // golden highlights
-  // night: cooler tint
-  c.rgb += vec3(-0.005, 0.0, 0.015) * (1.0 - l) * uNight;
-  // focus mode: desaturate + slight blue
-  c.rgb = mix(c.rgb, vec3(l) * vec3(0.9, 0.88, 1.05), uFocus * 0.45);
-  // photo filters
-  if (uFilter > 0.5 && uFilter < 1.5) { c.rgb = vec3(l) * vec3(1.07, 0.98, 0.82); }
-  else if (uFilter > 1.5 && uFilter < 2.5) { c.rgb = vec3(smoothstep(0.05, 0.95, l)); }
-  else if (uFilter > 2.5 && uFilter < 3.5) { c.rgb = pow(c.rgb, vec3(0.9, 1.0, 1.15)) * vec3(1.1, 0.95, 1.1); }
-  else if (uFilter > 3.5) { c.rgb = floor(c.rgb * 6.0) / 6.0; }
-  // subtle vignette
-  vec2 q = uv - 0.5;
-  float v = 1.0 - dot(q, q) * uVignette;
-  c.rgb *= v;
-  // damage flash
-  c.rgb = mix(c.rgb, c.rgb * vec3(1.4, 0.4, 0.4), uDamage * smoothstep(0.2, 0.7, length(q)));
-  // very subtle grain
-  c.rgb += (rnd(uv * 800.0 + uTime) - 0.5) * uGrain;
-  gl_FragColor = c;
-}`,
+const QUALITY = {
+  low: { pr: 0.75, shadow: 0, bloom: false, water: false, msaa: 0 },
+  medium: { pr: 1, shadow: 2048, bloom: true, water: true, msaa: 4 },
+  high: { pr: 1.5, shadow: 4096, bloom: true, water: true, msaa: 4 },
+  ultra: { pr: 2, shadow: 4096, bloom: true, water: true, msaa: 8 },
 };
 
 export class Gfx {
   constructor(canvas) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
-    const r = this.renderer;
+    const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.0;
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 6000);
-    this.quality = 'high';
-    this.setup();
+    setAnisotropy(Math.min(16, r.capabilities.getMaxAnisotropy()));
+
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.25, 4000);
+    this.scene.fog = new THREE.Fog(0xa9cbe8, 450, 2600);
+
+    // physical sky
+    this.sky = new Sky();
+    this.sky.scale.setScalar(3500);
+    const su = this.sky.material.uniforms;
+    su.turbidity.value = 2; su.rayleigh.value = 2.2; su.mieCoefficient.value = 0.003; su.mieDirectionalG.value = 0.86;
+    this.skyGain = { value: 0.42 };
+    this.scene.add(this.sky);
+    this.skyScene = new THREE.Scene();
+    this.envSky = new Sky(); this.envSky.scale.setScalar(100);
+    this.skyScene.add(this.envSky);
+    for (const s of [this.sky, this.envSky]) {
+      s.material.uniforms.uGain = this.skyGain;
+      s.material.fragmentShader = 'uniform float uGain;\n' + s.material.fragmentShader
+        .replace('gl_FragColor = vec4( retColor, 1.0 );', 'gl_FragColor = vec4( retColor * uGain, 1.0 );');
+    }
+    this.pmrem = new THREE.PMREMGenerator(r);
+
+    // sun + bounce light
+    this.sun = new THREE.DirectionalLight(0xfff1dc, 2.6);
+    this.sun.castShadow = true;
+    this.sun.shadow.bias = -0.0003;
+    this.sun.shadow.normalBias = 0.04;
+    this.scene.add(this.sun, this.sun.target);
+    this.hemi = new THREE.HemisphereLight(0xbcd8f5, 0x9c8a6a, 0.9);
+    this.scene.add(this.hemi);
+    this.sunDir = new THREE.Vector3();
+
+    // ocean around Miami, tinted to the original's turquoise
+    this.water = new Water(new THREE.PlaneGeometry(6000, 6000), {
+      textureWidth: 1024, textureHeight: 1024, waterNormals: this.waterNormals(),
+      sunDirection: new THREE.Vector3(0, 1, 0), sunColor: 0xffffff, waterColor: 0x0b6f80,
+      distortionScale: 1.6, fog: true,
+    });
+    this.water.rotation.x = -Math.PI / 2;
+    this.water.position.y = 0.05;
+    this.water.material.uniforms.size.value = 6;
+    this.scene.add(this.water);
+    this.waterLow = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.MeshStandardMaterial({
+      map: texture('water.webp'), color: 0x9fe3ec, roughness: 0.15, metalness: 0.1,
+    }));
+    this.waterLow.material.map.repeat.set(600, 600);
+    this.waterLow.rotation.x = -Math.PI / 2;
+    this.waterLow.position.y = 0.05;
+    this.scene.add(this.waterLow);
+
+    this.hour = 11;
+    this.envTimer = 0;
+    this.setQuality(localStorage.getItem('gm_quality') || 'high');
     addEventListener('resize', () => this.resize());
   }
 
-  setup() {
+  waterNormals() {
+    // procedural normal map so no external download is needed
+    const s = 256, data = new Uint8Array(s * s * 4);
+    const h = (x, y) => Math.sin(x * 0.19 + Math.sin(y * 0.07) * 2) * 0.5 + Math.sin(y * 0.23 + x * 0.05) * 0.35 +
+      Math.sin((x + y) * 0.41) * 0.15;
+    for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+      const dx = h(x + 1, y) - h(x - 1, y), dy = h(x, y + 1) - h(x, y - 1);
+      const n = new THREE.Vector3(-dx, -dy, 1.2).normalize();
+      const i = (y * s + x) * 4;
+      data[i] = (n.x * 0.5 + 0.5) * 255; data[i + 1] = (n.y * 0.5 + 0.5) * 255; data[i + 2] = (n.z * 0.5 + 0.5) * 255; data[i + 3] = 255;
+    }
+    const t = new THREE.DataTexture(data, s, s);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.needsUpdate = true;
+    return t;
+  }
+
+  setQuality(q) {
+    if (!QUALITY[q]) q = 'high';
+    this.quality = q;
+    localStorage.setItem('gm_quality', q);
+    const Q = this.Q = QUALITY[q];
     const r = this.renderer;
-    const pr = this.pixelRatio();
-    r.setPixelRatio(pr);
+    r.setPixelRatio(Math.min(devicePixelRatio || 1, Q.pr));
     r.setSize(innerWidth, innerHeight, false);
-    const samples = { low: 0, medium: 4, high: 4, ultra: 8 }[this.quality] ?? 4;
-    const rt = new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { type: THREE.HalfFloatType, samples });
+    this.sun.castShadow = Q.shadow > 0;
+    if (Q.shadow) {
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+      this.sun.shadow.mapSize.set(Q.shadow, Q.shadow);
+      const c = this.sun.shadow.camera;
+      const e = Q.shadow >= 4096 ? 110 : 80;
+      c.left = -e; c.right = e; c.top = e; c.bottom = -e; c.near = 1; c.far = 1200;
+      c.updateProjectionMatrix();
+    }
+    this.water.visible = Q.water;
+    this.waterLow.visible = !Q.water;
+
+    const pr = r.getPixelRatio();
+    const rt = new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { type: THREE.HalfFloatType, samples: Q.msaa });
     if (this.composer) this.composer.dispose();
     this.composer = new EffectComposer(r, rt);
-    this.renderPass = new RenderPass(null, this.camera);
-    this.composer.addPass(this.renderPass);
-
-    // GTAO — subtle ambient occlusion
-    this.gtao = new GTAOPass(this.scene || new THREE.Scene(), this.camera, innerWidth * pr, innerHeight * pr);
-    this.gtao.output = GTAOPass.OUTPUT.Default;
-    this.gtao.enabled = this.quality !== 'low';
-    this.gtao.radius = 0.25;
-    this.gtao.thickness = 1.0;
-    this.composer.addPass(this.gtao);
-
-    // bloom: very subtle — original game had clean look
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.15, 0.4, 1.5);
-    this.bloom.enabled = this.quality !== 'low';
-    this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
-    this.grade = new ShaderPass(GradeShader);
-    this.composer.addPass(this.grade);
-    if (this.scene) {
-      this.renderPass.scene = this.scene;
-      this.gtao.scene = this.scene;
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = null;
+    if (Q.bloom) {
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.18, 0.45, 0.92);
+      this.composer.addPass(this.bloom);
     }
-  }
-
-  pixelRatio() {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
-    return { low: Math.min(dpr, 0.75), medium: Math.min(dpr, 1), high: Math.min(dpr, 1.5), ultra: dpr }[this.quality] ?? 1;
-  }
-
-  setQuality(q) { this.quality = q; this.setup(); }
-
-  setScene(scene) {
-    this.scene = scene;
-    this.renderPass.scene = scene;
-    if (this.gtao) this.gtao.scene = scene;
+    this.composer.addPass(new OutputPass());
   }
 
   resize() {
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
-    const pr = this.pixelRatio();
-    this.renderer.setPixelRatio(pr);
-    this.renderer.setSize(innerWidth, innerHeight, false);
-    this.composer.setPixelRatio(pr);
-    this.composer.setSize(innerWidth, innerHeight);
+    this.setQuality(this.quality);
   }
 
-  render(dt, night) {
-    this.grade.uniforms.uTime.value += dt;
-    this.grade.uniforms.uNight.value = night;
-    // bloom: subtle during day, slightly more at night for lights
-    this.bloom.strength = 0.12 + night * 0.25;
-    this.bloom.threshold = 1.8 - night * 0.5;
-    this.bloom.radius = 0.35 + night * 0.15;
-    this.composer.render(dt);
+  /** hour: 0..24; focus: world point the shadow map follows */
+  update(dt, focus) {
+    const t = (this.hour - 6) / 12; // 0 sunrise, 1 sunset
+    const elev = Math.sin(Math.max(-0.25, Math.min(1.25, t)) * Math.PI);
+    const az = -0.6 + t * 1.6;
+    this.sunDir.set(Math.cos(az) * 0.6, Math.max(-0.3, elev), Math.sin(az) * 0.6 + 0.35).normalize();
+    const day = THREE.MathUtils.smoothstep(this.sunDir.y, -0.05, 0.18);
+    const night = 1 - day;
+    const golden = THREE.MathUtils.smoothstep(1 - this.sunDir.y, 0.6, 0.95) * day;
+    nightUniform.value = night;
+    this.night = night;
+
+    for (const s of [this.sky, this.envSky]) {
+      s.material.uniforms.sunPosition.value.copy(this.sunDir);
+      s.material.uniforms.rayleigh.value = 2.2 + golden * 1.2;
+      s.material.uniforms.turbidity.value = 2 + golden * 3;
+    }
+    this.sky.position.copy(this.camera.position);
+
+    // sun follows focus; snap to shadow texels to avoid shimmering
+    const sc = this.sun.shadow.camera;
+    const texel = (sc.right - sc.left) / (this.sun.shadow.mapSize.x || 2048);
+    const fx = Math.round(focus.x / texel) * texel, fz = Math.round(focus.z / texel) * texel;
+    const lightDir = this.sunDir.y > 0 ? this.sunDir : new THREE.Vector3(-this.sunDir.x, -this.sunDir.y, -this.sunDir.z);
+    this.sun.target.position.set(fx, 0, fz);
+    this.sun.position.set(fx, 0, fz).addScaledVector(lightDir, 500);
+    this.sun.target.updateMatrixWorld();
+    this.sun.color.setRGB(1, 0.94 - golden * 0.3, 0.86 - golden * 0.5).lerp(new THREE.Color(0x8fa6ff), night);
+    this.sun.intensity = 2.6 * day + 0.3 * night;
+    this.hemi.intensity = 0.9 * day + 0.22 * night;
+    this.hemi.color.setRGB(0.74, 0.85, 0.96).lerp(new THREE.Color(0x203050), night);
+    this.hemi.groundColor.setRGB(0.61, 0.54, 0.42).lerp(new THREE.Color(0x101418), night);
+
+    const fogDay = new THREE.Color(0xa9cbe8).lerp(new THREE.Color(0xf0b88a), golden);
+    this.scene.fog.color.copy(fogDay).lerp(new THREE.Color(0x0a0f1c), night);
+    this.renderer.toneMappingExposure = 0.9 + night * 0.3;
+
+    const wu = this.water.material.uniforms;
+    wu.time.value += dt * 0.5;
+    wu.sunDirection.value.copy(this.sunDir);
+    wu.sunColor.value.copy(this.sun.color).multiplyScalar(day);
+    wu.waterColor.value.setRGB(0.04, 0.42, 0.5).multiplyScalar(day * 0.9 + 0.1);
+
+    this.envTimer -= dt;
+    if (this.envTimer <= 0) {
+      this.envTimer = 4;
+      if (this.envRT) this.envRT.dispose();
+      this.envRT = this.pmrem.fromScene(this.skyScene);
+      this.scene.environment = this.envRT.texture;
+      this.scene.environmentIntensity = 0.35 * day + 0.06;
+    }
+    if (this.bloom) this.bloom.strength = 0.15 + night * 0.5;
+  }
+
+  render() {
+    this.composer.render();
   }
 }

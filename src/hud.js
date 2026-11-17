@@ -1,406 +1,243 @@
-// HUD, minimap/GPS, big map, notifications and menu panels.
-import { G } from './state.js';
-import { CITY, BEACH, CAUSEWAY, ISLAND, ISLAND_END_X, CZ, P, W, NX, NZ, HALF, blockBounds, blockDistrict, DISTRICT, nearestNode, findPath, nodes, zoneName } from './layout.js';
-import { fmtMoney, clamp } from './util.js';
-import { WEAPONS } from './weapons.js';
+import { WEAPONS } from './player.js';
 
-const $ = (id) => document.getElementById(id);
-const MAP = { x0: CITY.x0 - 160, z0: CITY.z0 - 160, x1: ISLAND.x1 + 160 };
-MAP.size = Math.max(MAP.x1 - MAP.x0, CITY.z1 + 160 - MAP.z0);
-MAP.z1 = MAP.z0 + MAP.size; MAP.x1 = MAP.x0 + MAP.size;
+const TEX = './assets/tex/';
+// rects in the original huds.webp atlas (1024x1024)
+const ICONS = {
+  fist: [670, 62, 92, 76], bat: [566, 4, 140, 52], beretta: [893, 88, 105, 62], uzi: [606, 148, 96, 70],
+  ak47: [724, 148, 134, 66], sniper: [496, 316, 120, 52], rpg: [862, 166, 150, 56],
+};
+const RING = [184, 0, 136, 132];
+// dialogue portraits from the original character art sheets
+export const PORTRAITS = {
+  罗斯科: ['characters1', 0, 0, 340, 420], 贝蒂: ['characters1', 340, 0, 340, 420], 波拉诺: ['characters1', 680, 0, 344, 420],
+  莫尼克: ['characters1', 0, 420, 340, 420], 维加: ['characters1', 340, 420, 340, 420], 乔伊: ['characters1', 680, 420, 344, 420],
+  强尼: ['characters2', 0, 0, 340, 440], 赫尔曼: ['characters2', 340, 0, 340, 440], 汤米: ['characters2', 680, 0, 344, 440],
+  阿梅利亚: ['characters2', 0, 440, 280, 420], LC: ['characters2', 260, 440, 300, 420],
+};
 
-export class HUD {
-  constructor() {
-    this.mm = $('minimap'); this.mctx = this.mm.getContext('2d');
-    this.bigCanvas = $('bigmap'); this.bctx = this.bigCanvas.getContext('2d');
-    this.mapImg = null;
-    this.notes = [];
-    this.subT = 0; this.bigT = 0; this.driftT = 0; this.promptT = 0;
-    this.gps = null; this.gpsT = 0;
-    this.bigZoom = 1.7; this.bigCenter = null;
-    this.bigCanvas.addEventListener('click', (e) => this.onMapClick(e));
-    this.bigCanvas.addEventListener('wheel', (e) => { this.bigZoom = clamp(this.bigZoom * (e.deltaY > 0 ? 0.85 : 1.18), 1, 4); this.drawBigMap(); }, { passive: true });
+function sprite(el, [x, y, w, h], scale, file = 'huds') {
+  el.style.backgroundImage = `url(${TEX}${file}.webp)`;
+  el.style.backgroundSize = `${1024 * scale}px ${1024 * scale}px`;
+  el.style.backgroundPosition = `${-x * scale}px ${-y * scale}px`;
+  el.style.width = w * scale + 'px';
+  el.style.height = h * scale + 'px';
+}
+
+/** Rich text from the original tables: \0..\1 highlights, | line breaks. */
+export function fmt(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/\\0|\u0000/g, '<b>').replace(/\\1|\u0001/g, '</b>').replace(/\|/g, '<br>');
+}
+
+export class Hud {
+  constructor(game) {
+    this.g = game;
+    const ui = document.getElementById('ui');
+    ui.innerHTML = `
+      <div id="hud" class="hidden">
+        <div id="radar"><canvas width="360" height="360"></canvas><div class="ring"></div><div class="north">N</div></div>
+        <div id="bars"><div class="bar hp"><i></i></div><div class="bar ar"><i></i></div></div>
+        <div id="topright">
+          <div id="weapon"><div class="icon"></div><div class="ammo"></div></div>
+          <div id="money">$0</div>
+          <div id="wanted"></div>
+        </div>
+        <div id="objective"></div>
+        <div id="notify"></div>
+        <div id="big"></div>
+        <div id="timer"></div>
+        <div id="speedo"></div>
+        <div id="crosshair"></div>
+        <div id="damage"></div>
+      </div>
+      <div id="dialog" class="hidden"><div class="portrait"></div><div class="box"><div class="who"></div><div class="line"></div><div class="hint">点击 / 空格 继续</div></div></div>
+      <div id="mapview" class="hidden"><div class="mapwrap"><img src="${TEX}minimap_map.webp"><canvas width="1024" height="1024"></canvas></div><div class="legend">M / Tab 关闭 · 点击地图设置导航点</div></div>
+      <div id="screen" class="hidden"></div>
+      <div id="loading"><div class="logo"><span>GANGSTAR</span><small>孤胆车神：雄霸迈阿密</small></div><div class="msg">正在载入原版素材…</div><div class="prog"><i></i></div></div>`;
+    this.el = (s) => ui.querySelector(s);
+    this.hud = this.el('#hud');
+    this.radar = this.el('#radar canvas').getContext('2d');
+    sprite(this.el('#radar .ring'), RING, 1.42);
+    this.mapImg = new Image();
+    this.mapImg.src = TEX + 'minimap_map.webp';
+    this.notifyT = 0;
+    this.bigT = 0;
+    this.route = null;
+    this.blips = [];
+    this.lastWeapon = '';
+    this.el('#mapview canvas').addEventListener('click', (e) => {
+      const r = e.target.getBoundingClientRect();
+      const M = this.g.roads.map;
+      const u = (e.clientX - r.left) / r.width * M.size, v = (e.clientY - r.top) / r.height * M.size;
+      this.g.setWaypoint(M.x0 + u * M.scale, M.z0 + v * M.scale);
+      this.drawBigMap();
+    });
   }
 
-  // ---------- pre-render map ----------
-  buildMap() {
-    const S = 2048, c = document.createElement('canvas'); c.width = c.height = S;
-    const ctx = c.getContext('2d');
-    const s = S / MAP.size;
-    const X = (x) => (x - MAP.x0) * s, Z = (z) => (z - MAP.z0) * s;
-    ctx.fillStyle = '#0f4c66'; ctx.fillRect(0, 0, S, S);
-    // waves texture
-    ctx.globalAlpha = 0.08; ctx.strokeStyle = '#9fe8ff';
-    for (let k = 0; k < 300; k++) { const x = Math.random() * S, y = Math.random() * S; ctx.beginPath(); ctx.arc(x, y, 6, 0.3, 2.8); ctx.stroke(); }
-    ctx.globalAlpha = 1;
-    // beach
-    ctx.fillStyle = '#e3cf96'; ctx.fillRect(X(BEACH.x0), Z(BEACH.z0), (BEACH.x1 - BEACH.x0) * s * 0.7, (BEACH.z1 - BEACH.z0) * s);
-    // land
-    ctx.fillStyle = '#3a3a44'; ctx.fillRect(X(CITY.x0), Z(CITY.z0), (CITY.x1 - CITY.x0) * s, (CITY.z1 - CITY.z0) * s);
-    ctx.fillStyle = '#4a7a48'; ctx.fillRect(X(ISLAND.x0), Z(ISLAND.z0), (ISLAND.x1 - ISLAND.x0) * s, (ISLAND.z1 - ISLAND.z0) * s);
-    // blocks by district
-    const dcol = { [DISTRICT.PORT]: '#4a4a52', [DISTRICT.DOWNTOWN]: '#353a4a', [DISTRICT.MIDTOWN]: '#44404c', [DISTRICT.RESIDENTIAL]: '#3f5a3f', [DISTRICT.DECO]: '#5a4252', [DISTRICT.PARK]: '#3f7a3a' };
-    for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
-      const b = blockBounds(i, j);
-      ctx.fillStyle = dcol[blockDistrict(i, j)] || '#444';
-      ctx.fillRect(X(b.x0), Z(b.z0), (b.x1 - b.x0) * s, (b.z1 - b.z0) * s);
-    }
-    // footprints
-    for (const f of G.world.footprints) {
-      ctx.fillStyle = f.c;
-      ctx.globalAlpha = 0.9;
-      ctx.fillRect(X(f.x0), Z(f.z0), (f.x1 - f.x0) * s, (f.z1 - f.z0) * s);
-    }
-    ctx.globalAlpha = 1;
-    // roads
-    ctx.fillStyle = '#8d8d9c';
-    for (let i = 0; i <= NX; i++) ctx.fillRect(X(i * P - HALF), Z(-HALF), W * s, (NZ * P + W) * s);
-    for (let j = 0; j <= NZ; j++) ctx.fillRect(X(-HALF), Z(j * P - HALF), (NX * P + W) * s, W * s);
-    ctx.fillRect(X(CAUSEWAY.x0), Z(CZ - HALF), (ISLAND_END_X + 14 - CAUSEWAY.x0) * s, W * s);
-    ctx.fillStyle = '#e8d56a'; ctx.globalAlpha = 0.35;
-    for (let i = 0; i <= NX; i++) ctx.fillRect(X(i * P - 0.5), Z(-HALF), 1 * s + 0.5, (NZ * P + W) * s);
-    for (let j = 0; j <= NZ; j++) ctx.fillRect(X(-HALF), Z(j * P - 0.5), (NX * P + W) * s, 1 * s + 0.5);
-    ctx.globalAlpha = 1;
-    this.mapImg = c; this.mapScale = s;
+  loading(p, msg) {
+    this.el('#loading .prog i').style.width = Math.round(p * 100) + '%';
+    if (msg) this.el('#loading .msg').textContent = msg;
+    if (p >= 1) setTimeout(() => this.el('#loading').classList.add('hidden'), 300);
   }
 
-  w2m(x, z) { return [(x - MAP.x0) * this.mapScale, (z - MAP.z0) * this.mapScale]; }
+  show(on) { this.hud.classList.toggle('hidden', !on); }
 
-  blips() {
-    const out = [];
-    const mk = G.world.markers;
-    const icon = (k, ch, col) => mk[k] && out.push({ x: mk[k].x, z: mk[k].z, ch, col, edge: false });
-    if (G.save.unlocked.garage) icon('garage', 'S', '#ffb02e');
-    icon('gunshop', '枪', '#ff3355'); icon('hospital', '+', '#ff5577'); icon('safehouse', '⌂', '#3dff7a');
-    if (G.activities) for (const b of G.activities.blips()) out.push(b);
-    if (G.missions) for (const b of G.missions.blips()) out.push(b);
-    if (G.territories) for (const b of G.territories.blips()) out.push(b);
-    if (G.waypoint) out.push({ x: G.waypoint.x, z: G.waypoint.z, ch: '◆', col: '#ff3fa4', edge: true });
-    return out;
+  notify(text, t = 2.5) {
+    const n = this.el('#notify');
+    n.innerHTML = fmt(text);
+    n.classList.add('on');
+    this.notifyT = t;
   }
 
-  // ---------- per-frame HUD ----------
-  update(dt) {
-    const pl = G.player;
-    $('money').textContent = fmtMoney(G.save.money);
-    const h = Math.floor(G.hour), m = Math.floor((G.hour % 1) * 60);
-    $('clock').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    $('hpbar').style.width = clamp(pl.char.hp, 0, 100) + '%';
-    $('arbar').parentElement.style.display = pl.char.armor > 0 ? '' : 'none';
-    $('arbar').style.width = clamp(pl.char.armor, 0, 100) + '%';
-    $('focusbar').style.width = pl.focus * 100 + '%';
-    $('focusoverlay').classList.toggle('on', pl.focusOn);
-    // swim stamina bar
-    const swimBar = $('swimbar');
-    if (swimBar) {
-      swimBar.parentElement.style.display = pl.swimming ? '' : 'none';
-      swimBar.style.width = pl.swimStamina * 100 + '%';
-      swimBar.style.background = pl.swimStamina < 0.25 ? '#ff3355' : '#2ef2ff';
-    }
-    // territory battle progress
-    const tprog = $('territoryprog');
-    if (tprog && G.territories) {
-      tprog.style.display = G.territories.battleActive ? '' : 'none';
-      if (G.territories.battleActive) {
-        const pct = G.territories.battleProgress * 100;
-        tprog.querySelector('.fill').style.width = pct + '%';
-      }
-    }
-    const v = pl.inVehicle;
-    if (v) {
-      $('speedval').textContent = Math.round(Math.abs(v.vF) * 3.6);
-      $('nitrobar').parentElement.style.display = v.nitroMax > 0 ? '' : 'none';
-      $('nitrobar').style.width = (v.nitroMax > 0 ? v.nitro / v.nitroMax * 100 : 0) + '%';
-    }
-    // crosshair
-    const ch = $('crosshair');
-    const showCross = !v && pl.weapon !== 'fist' && pl.weapon !== 'grenade' && (pl.char.aim || G.input.touchMode);
-    ch.classList.toggle('hidden', !showCross);
-    // timed text
-    if (this.subT > 0) { this.subT -= dt; if (this.subT <= 0) $('subtitle').innerHTML = ''; }
-    if (this.bigT > 0) { this.bigT -= dt; if (this.bigT <= 0) $('bigtext').classList.remove('show'); }
-    // drift
-    const D = pl.drift;
-    if (D.active && D.score > 40) {
-      $('drift').innerHTML = `${Math.floor(D.score).toLocaleString()}<small>漂移 ×${D.mult}</small>`;
-      this.driftT = 0;
-    } else if (this.driftT > 0) { this.driftT -= dt; if (this.driftT <= 0) $('drift').innerHTML = ''; }
-    else if (!D.active) $('drift').innerHTML = '';
-    // prompts
-    let prompt = '';
-    if (!v && pl.nearCar && !pl.dead) prompt = G.input.touchMode ? '点 🚗 上车' : '按 <kbd>F</kbd> 上车';
-    if (this.customPrompt && this.promptT > 0) { prompt = this.customPrompt; this.promptT -= dt; }
-    if ($('prompt').innerHTML !== prompt) $('prompt').innerHTML = prompt;
-    // zone name
-    this.zoneT = (this.zoneT || 0) - dt;
-    if (this.zoneT <= 0) { this.zoneT = 0.5; $('zone').textContent = zoneName(pl.x, pl.z); }
-    this.drawMinimap(dt);
-    // damage flash fade
-    this.dmg = Math.max(0, (this.dmg || 0) - dt * 1.5);
-    const low = pl.char.hp < 30 && !pl.dead ? 0.35 + Math.sin(G.time * 6) * 0.15 : 0;
-    $('damageflash').style.boxShadow = `inset 0 0 ${120 + this.dmg * 100}px rgba(255,0,40,${Math.max(this.dmg * 0.8, low)})`;
-    G.gfx.grade.uniforms.uDamage.value = Math.max(this.dmg * 0.6, low * 0.5);
+  /** Big centred banner like the original "任务完成" / "你已严重受伤". */
+  big(text, sub = '', t = 3, cls = '') {
+    const b = this.el('#big');
+    b.className = 'on ' + cls;
+    b.innerHTML = `<div>${fmt(text)}</div>${sub ? `<small>${fmt(sub)}</small>` : ''}`;
+    this.bigT = t;
   }
 
-  drawMinimap(dt) {
-    if (!this.mapImg) return;
-    const ctx = this.mctx, Sz = this.mm.width, c = Sz / 2;
-    const pl = G.player;
-    const sp = pl.inVehicle ? pl.inVehicle.speed : 0;
-    this.mmZoom = this.mmZoom ?? 1.4;
-    const tz = clamp(1.6 - sp / 45, 0.75, 1.6);
-    this.mmZoom += (tz - this.mmZoom) * Math.min(1, dt * 2);
-    const k = this.mmZoom / this.mapScale; // map px -> minimap px (world m * mmZoom)
-    const yaw = pl.camYaw;
-    const rot = -Math.PI / 2 - Math.atan2(Math.cos(yaw), Math.sin(yaw));
-    const [px, pz] = this.w2m(pl.x, pl.z);
-    ctx.save();
-    ctx.fillStyle = '#0f4c66'; ctx.fillRect(0, 0, Sz, Sz);
-    ctx.translate(c, c); ctx.rotate(rot); ctx.scale(k * this.mapScale / this.mapScale, k * this.mapScale / this.mapScale);
-    ctx.scale(this.mapScale / this.mapScale, 1);
-    // draw map centered on player
-    const scale = this.mmZoom / this.mapScale;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.translate(c, c); ctx.rotate(rot); ctx.scale(scale, scale); ctx.translate(-px, -pz);
-    ctx.drawImage(this.mapImg, 0, 0);
-    // GPS route
-    this.gpsT -= dt;
-    if (G.missions && G.missions.gpsTarget) this.gpsTo = G.missions.gpsTarget; else this.gpsTo = G.waypoint;
-    if (this.gpsTo && this.gpsT <= 0) {
-      this.gpsT = 1;
-      const a = nearestNode(pl.x, pl.z), b = nearestNode(this.gpsTo.x, this.gpsTo.z);
-      this.gps = findPath(a.id, b.id).map((id) => nodes[id]);
-    }
-    if (this.gpsTo && this.gps) {
-      ctx.strokeStyle = G.missions && G.missions.gpsTarget ? '#ffd166' : '#ff3fa4';
-      ctx.lineWidth = 5 / scale; ctx.lineJoin = 'round'; ctx.globalAlpha = 0.85;
-      ctx.beginPath(); ctx.moveTo(...this.w2m(pl.x, pl.z));
-      for (const n of this.gps) ctx.lineTo(...this.w2m(n.x, n.z));
-      ctx.lineTo(...this.w2m(this.gpsTo.x, this.gpsTo.z));
-      ctx.stroke(); ctx.globalAlpha = 1;
-    }
-    ctx.restore();
-    // blips (screen-space)
-    const toScreen = (x, z) => {
-      const dx = (x - pl.x) * this.mmZoom, dz = (z - pl.z) * this.mmZoom;
-      const cr = Math.cos(rot), sr = Math.sin(rot);
-      return [c + dx * cr - dz * sr, c + dx * sr + dz * cr];
-    };
-    ctx.font = 'bold 13px "Noto Sans SC", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const R = c - 12;
-    for (const b of this.blips()) {
-      let [sx, sy] = toScreen(b.x, b.z);
-      const dx = sx - c, dy = sy - c, d = Math.hypot(dx, dy);
-      if (d > R) { if (!b.edge && !b.mission) continue; sx = c + dx / d * R; sy = c + dy / d * R; }
-      ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.beginPath(); ctx.arc(sx, sy, 9, 0, 7); ctx.fill();
-      ctx.fillStyle = b.col; ctx.fillText(b.ch, sx, sy + 1);
-    }
-    // police dots
-    const blink = Math.floor(G.time * 4) % 2;
-    for (const v of G.vehicles.list) {
-      if (!v.isPolice || v.dead || !v.siren) continue;
-      const [sx, sy] = toScreen(v.x, v.z);
-      if (Math.hypot(sx - c, sy - c) > R) continue;
-      ctx.fillStyle = blink ? '#ff2244' : '#2266ff'; ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 7); ctx.fill();
-    }
-    for (const p of G.pedSys.list) {
-      if (p.char.dead || !(p.hostile || (p.mission && p.mission.blip))) continue;
-      const [sx, sy] = toScreen(p.x, p.z);
-      if (Math.hypot(sx - c, sy - c) > R) continue;
-      ctx.fillStyle = p.mission && p.mission.blipCol ? p.mission.blipCol : '#ff4444'; ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 7); ctx.fill();
-    }
-    // player arrow (always up)
-    ctx.save(); ctx.translate(c, c);
-    const carH = pl.inVehicle ? pl.inVehicle.h : pl.char.h;
-    const rel = -(carH - yaw);
-    ctx.rotate(rel);
-    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(7, 7); ctx.lineTo(0, 3); ctx.lineTo(-7, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.restore();
-    // north indicator
-    const [nx, ny] = toScreen(pl.x, pl.z - 10000);
-    const nd = Math.hypot(nx - c, ny - c);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Orbitron, sans-serif';
-    ctx.fillText('N', c + (nx - c) / nd * (c - 10), c + (ny - c) / nd * (c - 10));
-    // police search circle tint
-    if (G.police && G.police.level > 0) {
-      ctx.strokeStyle = blink ? 'rgba(255,40,70,.6)' : 'rgba(40,90,255,.6)'; ctx.lineWidth = 6;
-      ctx.beginPath(); ctx.arc(c, c, c - 3, 0, 7); ctx.stroke();
-    }
+  objective(text) {
+    const o = this.el('#objective');
+    o.innerHTML = text ? fmt(text) : '';
+    o.classList.toggle('on', !!text);
+  }
+
+  timer(sec) {
+    const t = this.el('#timer');
+    if (sec == null) { t.textContent = ''; return; }
+    const s = Math.max(0, Math.ceil(sec));
+    t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  damageFlash(a) {
+    const d = this.el('#damage');
+    d.style.transition = 'none'; d.style.opacity = Math.min(0.85, a + 0.25);
+    requestAnimationFrame(() => { d.style.transition = 'opacity .8s'; d.style.opacity = 0; });
+  }
+
+  /** Sequential dialogue with portraits; resolves when finished. lines: [[speaker, text], ...] */
+  dialog(lines) {
+    return new Promise((resolve) => {
+      const box = this.el('#dialog');
+      let i = 0;
+      const step = () => {
+        if (i >= lines.length) { box.classList.add('hidden'); cleanup(); resolve(); return; }
+        const [who, text, voice] = lines[i++];
+        box.classList.remove('hidden');
+        this.el('#dialog .who').textContent = who || '';
+        this.el('#dialog .line').innerHTML = fmt(text);
+        const p = this.el('#dialog .portrait');
+        const r = PORTRAITS[who];
+        if (r) { p.style.display = ''; sprite(p, r.slice(1), 0.42, r[0]); } else p.style.display = 'none';
+        box.classList.toggle('right', who !== '强尼');
+        if (voice) this.g.audio.play(voice, { vol: 0.9 });
+        this.g.audio.play('int_tutorial_appear', { vol: 0.25 });
+      };
+      const key = (e) => { if (['Space', 'Enter', 'KeyF'].includes(e.code)) { e.preventDefault(); step(); } };
+      const click = () => step();
+      const cleanup = () => { removeEventListener('keydown', key); box.removeEventListener('pointerdown', click); };
+      addEventListener('keydown', key);
+      box.addEventListener('pointerdown', click);
+      step();
+    });
+  }
+
+  screen(html) {
+    const s = this.el('#screen');
+    s.innerHTML = html;
+    s.classList.toggle('hidden', !html);
+    return s;
+  }
+
+  toggleMap(on) {
+    const m = this.el('#mapview');
+    m.classList.toggle('hidden', !on);
+    if (on) this.drawBigMap();
   }
 
   drawBigMap() {
-    if (!this.mapImg) return;
-    const ctx = this.bctx, S = this.bigCanvas.width;
-    const pl = G.player;
-    const z = this.bigZoom;
-    const view = MAP.size / z;
-    const cx = z === 1 ? MAP.x0 + MAP.size / 2 : clamp(pl.x, MAP.x0 + view / 2, MAP.x1 - view / 2);
-    const cz = z === 1 ? MAP.z0 + MAP.size / 2 : clamp(pl.z, MAP.z0 + view / 2, MAP.z1 - view / 2);
-    this.bigView = { x0: cx - view / 2, z0: cz - view / 2, size: view };
-    const s = S / view;
-    ctx.fillStyle = '#0f4c66'; ctx.fillRect(0, 0, S, S);
-    const ms = this.mapScale;
-    ctx.drawImage(this.mapImg, (this.bigView.x0 - MAP.x0) * ms, (this.bigView.z0 - MAP.z0) * ms, view * ms, view * ms, 0, 0, S, S);
-    const toS = (x, zz) => [(x - this.bigView.x0) * s, (zz - this.bigView.z0) * s];
-    ctx.font = 'bold 18px "Noto Sans SC", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (const b of this.blips()) {
-      const [x, y] = toS(b.x, b.z);
-      ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.beginPath(); ctx.arc(x, y, 13, 0, 7); ctx.fill();
-      ctx.fillStyle = b.col; ctx.fillText(b.ch, x, y + 1);
-      if (b.label) { ctx.font = '12px "Noto Sans SC"'; ctx.fillStyle = '#fff'; ctx.fillText(b.label, x, y + 22); ctx.font = 'bold 18px "Noto Sans SC", sans-serif'; }
+    const g = this.g, M = g.roads.map, c = this.el('#mapview canvas').getContext('2d');
+    c.clearRect(0, 0, 1024, 1024);
+    const toMap = (x, z) => [(x - M.x0) / M.scale, (z - M.z0) / M.scale];
+    if (this.route) {
+      c.strokeStyle = '#ff2fb0'; c.lineWidth = 5; c.beginPath();
+      this.route.forEach(([x, z], i) => { const [u, v] = toMap(x, z); i ? c.lineTo(u, v) : c.moveTo(u, v); });
+      c.stroke();
     }
-    // labels
-    ctx.font = 'bold 15px "Noto Sans SC"'; ctx.fillStyle = 'rgba(255,255,255,.6)';
-    const lab = [['集装箱码头', 0, 6 * P], ['金融中心', 5 * P, 4.5 * P], ['海滨装饰艺术区', 9 * P, 6 * P], ['棕榈住宅区', 3 * P, 10.5 * P], ['日落海滩', BEACH.x0 + 45, 3 * P], ['珊瑚岛', ISLAND.x0 + 120, CZ - 100], ['中城', 2 * P, 2.5 * P]];
-    for (const [t, x, zz] of lab) { const [sx, sy] = toS(x, zz); ctx.fillText(t, sx, sy); }
-    const [px, py] = toS(pl.x, pl.z);
-    ctx.save(); ctx.translate(px, py); ctx.rotate(Math.PI - (pl.inVehicle ? pl.inVehicle.h : pl.char.h));
-    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(9, 9); ctx.lineTo(0, 4); ctx.lineTo(-9, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.restore();
+    for (const b of this.blips) {
+      const [u, v] = toMap(b.x, b.z);
+      c.fillStyle = b.color; c.strokeStyle = '#000'; c.lineWidth = 3;
+      c.beginPath(); c.arc(u, v, 11, 0, 7); c.fill(); c.stroke();
+      if (b.label) { c.font = 'bold 22px sans-serif'; c.fillStyle = '#fff'; c.strokeText(b.label, u + 14, v + 7); c.fillText(b.label, u + 14, v + 7); }
+    }
+    const p = g.focus, [u, v] = toMap(p.x, p.z);
+    c.save(); c.translate(u, v); c.rotate(-g.camera.yaw + Math.PI);
+    c.fillStyle = '#fff'; c.strokeStyle = '#000'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(0, -18); c.lineTo(12, 14); c.lineTo(0, 7); c.lineTo(-12, 14); c.closePath(); c.fill(); c.stroke();
+    c.restore();
   }
 
-  onMapClick(e) {
-    const r = this.bigCanvas.getBoundingClientRect();
-    const mx = (e.clientX - r.left) / r.width, my = (e.clientY - r.top) / r.height;
-    const v = this.bigView;
-    const x = v.x0 + mx * v.size, z = v.z0 + my * v.size;
-    if (G.waypoint && Math.hypot(G.waypoint.x - x, G.waypoint.z - z) < v.size * 0.02) G.waypoint = null;
-    else G.waypoint = { x, z };
-    this.gpsT = 0;
-    G.audio && G.audio.ui('click');
-    this.drawBigMap();
+  drawRadar() {
+    const g = this.g, M = g.roads.map, c = this.radar, S = 360;
+    const p = g.focus, zoom = 1.6 + Math.min(1.2, (g.player.vehicle ? g.player.vehicle.speed : 0) / 30);
+    const rot = g.camera.yaw + Math.PI;
+    c.save();
+    c.clearRect(0, 0, S, S);
+    c.beginPath(); c.arc(S / 2, S / 2, S / 2 - 6, 0, 7); c.clip();
+    c.fillStyle = '#63a09f'; c.fillRect(0, 0, S, S);
+    c.translate(S / 2, S / 2);
+    c.rotate(rot);
+    c.scale(zoom, zoom);
+    const u = (p.x - M.x0) / M.scale, v = (p.z - M.z0) / M.scale;
+    if (this.mapImg.complete) c.drawImage(this.mapImg, -u, -v);
+    if (this.route) {
+      c.strokeStyle = '#ff2fb0'; c.lineWidth = 3.5 / zoom * 1.6; c.beginPath();
+      this.route.forEach(([x, z], i) => { const a = (x - M.x0) / M.scale - u, b = (z - M.z0) / M.scale - v; i ? c.lineTo(a, b) : c.moveTo(a, b); });
+      c.stroke();
+    }
+    c.restore();
+    // blips (clamped to the rim)
+    for (const b of this.blips) {
+      let dx = ((b.x - M.x0) / M.scale - u) * zoom, dy = ((b.z - M.z0) / M.scale - v) * zoom;
+      const cr = Math.cos(rot), sr = Math.sin(rot);
+      let rx = dx * cr - dy * sr, ry = dx * sr + dy * cr;
+      const L = Math.hypot(rx, ry), R = S / 2 - 18;
+      if (L > R) { rx *= R / L; ry *= R / L; }
+      c.fillStyle = b.color; c.strokeStyle = '#000'; c.lineWidth = 3;
+      c.beginPath(); c.arc(S / 2 + rx, S / 2 + ry, b.small ? 6 : 10, 0, 7); c.fill(); c.stroke();
+    }
+    c.fillStyle = '#fff'; c.strokeStyle = '#000'; c.lineWidth = 3;
+    c.save(); c.translate(S / 2, S / 2);
+    c.rotate(rot - (g.player.vehicle ? g.player.vehicle.yaw : g.player.yaw) - Math.PI);
+    c.beginPath(); c.moveTo(0, -16); c.lineTo(11, 12); c.lineTo(0, 6); c.lineTo(-11, 12); c.closePath(); c.fill(); c.stroke();
+    c.restore();
+    this.el('#radar .north').style.transform = `rotate(${rot}rad) translateY(-80px) rotate(${-rot}rad)`;
   }
 
-  // ---------- API ----------
-  weapon() {
-    const pl = G.player; const w = WEAPONS[pl.weapon];
-    $('weaponname').textContent = `${w.icon} ${w.name}`;
-    if (pl.weapon === 'fist') $('ammo').textContent = '';
-    else $('ammo').textContent = pl.reload > 0 ? '换弹中…' : `${pl.mag[pl.weapon] ?? 0} / ${Math.max(0, (G.save.ammo[pl.weapon] || 0) - (pl.mag[pl.weapon] || 0))}`;
-  }
-  vehicle(v) {
-    $('speedo').classList.toggle('hidden', !v);
-    if (v) { $('carname').textContent = v.t.name; this.radio(G.audio.stations[G.audio.station]); }
-  }
-  radio(name) {
-    $('radioname').textContent = '📻 ' + name;
-    clearTimeout(this._rt);
-    this._rt = setTimeout(() => ($('radioname').textContent = ''), 3500);
-  }
-  stars(level, flashing) {
-    const el = $('stars');
-    let h = '';
-    for (let k = 1; k <= 5; k++) h += k <= level ? '★' : '<span class="off">★</span>';
-    if (level === 0) h = '';
-    if (el.innerHTML !== h) el.innerHTML = h;
-    el.classList.toggle('flash', !!flashing && level > 0);
-  }
-  damage(f) { this.dmg = Math.min(1, (this.dmg || 0) + f); }
-  hit() { const h = $('hitmarker'); h.classList.remove('show'); void h.offsetWidth; h.classList.add('show'); }
-  notify(text, ms = 4500) {
-    const n = document.createElement('div'); n.className = 'n'; n.innerHTML = text;
-    $('notify').appendChild(n);
-    setTimeout(() => n.remove(), ms);
-    while ($('notify').children.length > 4) $('notify').firstChild.remove();
-  }
-  subtitle(html, sec = 4) { $('subtitle').innerHTML = html; this.subT = sec; }
-  objective(text) { $('objective').textContent = text || ''; }
-  big(text, cls = 'gold', sub = '', sec = 3) {
-    const b = $('bigtext'); b.className = 'show ' + cls; b.innerHTML = text + (sub ? `<small>${sub}</small>` : ''); this.bigT = sec;
-  }
-  timer(sec) {
-    const t = $('timer');
-    if (sec == null) { t.classList.add('hidden'); return; }
-    t.classList.remove('hidden');
-    const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
-    t.textContent = `${m}:${String(s).padStart(2, '0')}`;
-    t.style.color = sec < 10 ? '#ff3355' : '';
-  }
-  prompt(html, sec = 0.3) { this.customPrompt = html; this.promptT = sec; }
-  driftBank(pts, cash) {
-    $('drift').innerHTML = `+${fmtMoney(cash)}<small>漂移 ${pts.toLocaleString()} 分</small>`;
-    this.driftT = 2;
-    G.audio && G.audio.ui('cash');
-  }
-  driftFail() { $('drift').innerHTML = `<span style="color:#ff3355">漂移中断</span>`; this.driftT = 1.5; }
-  stunt(title, dist, h, t, cash) {
-    this.big(title, 'gold', `距离 ${dist.toFixed(0)}m · 高度 ${h.toFixed(1)}m · 滞空 ${t.toFixed(1)}s · +${fmtMoney(cash)}`, 3);
-    G.audio && G.audio.ui('cash');
-  }
-  achievementPopup(icon, name, desc) {
-    const el = $('achievpop');
-    if (!el) return;
-    el.innerHTML = `<span class="a-icon">${icon}</span><div class="a-info"><div class="label">成就解锁</div><b>${name}</b><div class="desc">${desc}</div></div>`;
-    el.classList.add('show');
-    clearTimeout(this._achievT);
-    this._achievT = setTimeout(() => el.classList.remove('show'), 3800);
-  }
-  scopeOverlay(on) {
-    let el = $('scopeoverlay');
-    if (!el) return;
-    el.classList.toggle('show', on);
-  }
-  showHUD(on) { $('hud').classList.toggle('hidden', !on); $('touch').classList.toggle('hidden', !on || !G.input.touchMode); }
-
-  // ---------- panels ----------
-  settingsHTML() {
-    const s = G.settings;
-    const opt = (v, cur, label) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${label}</option>`;
-    return `
-<div class="set-row"><span>画质预设</span><select id="setQuality">${opt('low', s.quality, '低（流畅）')}${opt('medium', s.quality, '中')}${opt('high', s.quality, '高（推荐）')}${opt('ultra', s.quality, '极致')}</select></div>
-<div class="set-row"><span>鼠标灵敏度</span><input id="setSens" type="range" min="0.3" max="3" step="0.1" value="${s.sensitivity}"></div>
-<div class="set-row"><span>反转 Y 轴</span><input id="setInv" type="checkbox" ${s.invertY ? 'checked' : ''}></div>
-<div class="set-row"><span>视野 FOV</span><input id="setFov" type="range" min="55" max="95" step="1" value="${s.fov}"></div>
-<div class="set-row"><span>主音量</span><input id="setVol" type="range" min="0" max="1" step="0.05" value="${s.volume}"></div>
-<div class="set-row"><span>电台音乐</span><input id="setMusic" type="range" min="0" max="1" step="0.05" value="${s.music}"></div>
-<div class="set-row"><span>昼夜流速</span><select id="setTime">${opt('0', String(s.timeSpeed), '冻结时间')}${opt('0.5', String(s.timeSpeed), '慢')}${opt('1', String(s.timeSpeed), '正常 (1分钟=1小时)')}${opt('3', String(s.timeSpeed), '快')}</select></div>
-<div class="set-row"><span>跳到时间</span><span><button class="mbtn small" data-hour="7">清晨</button> <button class="mbtn small" data-hour="13">正午</button> <button class="mbtn small" data-hour="18.4">黄昏</button> <button class="mbtn small" data-hour="22.5">深夜</button></span></div>
-<div class="set-row"><span>天气</span><span><button class="mbtn small" data-rain="0">晴</button> <button class="mbtn small" data-rain="1">暴雨</button></span></div>
-<div class="set-row"><span>显示 FPS</span><input id="setFps" type="checkbox" ${s.showFps ? 'checked' : ''}></div>`;
-  }
-  bindSettings(root) {
-    const s = G.settings;
-    const on = (id, ev, f) => { const el = root.querySelector('#' + id); if (el) el.addEventListener(ev, f); };
-    on('setQuality', 'change', (e) => { s.quality = e.target.value; G.applyQuality(); G.saveSettings(); });
-    on('setSens', 'input', (e) => { s.sensitivity = +e.target.value; G.saveSettings(); });
-    on('setInv', 'change', (e) => { s.invertY = e.target.checked; G.saveSettings(); });
-    on('setFov', 'input', (e) => { s.fov = +e.target.value; G.saveSettings(); });
-    on('setVol', 'input', (e) => { s.volume = +e.target.value; G.audio.setVolumes(); G.saveSettings(); });
-    on('setMusic', 'input', (e) => { s.music = +e.target.value; G.audio.setVolumes(); G.saveSettings(); });
-    on('setTime', 'change', (e) => { s.timeSpeed = +e.target.value; G.saveSettings(); });
-    on('setFps', 'change', (e) => { s.showFps = e.target.checked; G.saveSettings(); });
-    root.querySelectorAll('[data-hour]').forEach((b) => b.addEventListener('click', () => { G.hour = +b.dataset.hour; G.sky.envTimer = 0; }));
-    root.querySelectorAll('[data-rain]').forEach((b) => b.addEventListener('click', () => G.sky.setWeather(+b.dataset.rain)));
-  }
-  helpHTML() {
-    const r = (k, d) => `<kbd>${k}</kbd><span>${d}</span>`;
-    return `<h3>步行</h3><div class="help-grid">
-${r('W A S D', '移动')}${r('鼠标', '视角')}${r('左键', '射击 / 出拳')}${r('右键', '瞄准')}${r('Shift', '冲刺')}${r('空格', '跳跃')}
-${r('F', '上车 / 下车 / 抢车')}${r('Q / 滚轮 / 1-7', '切换武器')}${r('G', '手雷')}${r('E', '专注时间（子弹时间）')}${r('N', '手机菜单')}</div>
-<h3>驾驶</h3><div class="help-grid">
-${r('W / S', '油门 / 刹车倒车')}${r('A / D', '转向')}${r('空格', '手刹（漂移！）')}${r('Shift', '氮气加速（需改装）')}${r('H', '喇叭')}${r('R', '切换电台')}
-${r('C', '切换镜头')}${r('V', '回头看')}${r('左键', '驾车射击（手枪/冲锋枪）')}${r('T', '出租车里开始载客任务')}</div>
-<h3>其它</h3><div class="help-grid">${r('M / Esc', '地图与暂停')}${r('P', '拍照模式')}</div>
-<h3>玩法提示</h3>
-<p>· 黄色光柱是剧情任务，跟随小地图上的黄色 GPS 路线。<br>
-· 用手刹甩尾漂移可以累积连击分数，漂移结束后兑换现金并补充氮气。<br>
-· 城市里藏着 25 枚隐藏徽章，还有 6 个特技跳台等你挑战。<br>
-· 被通缉时，躲开警察视线一段时间即可脱身；也可以开进修车行喷漆。<br>
-· 手柄与触屏均支持。</p>`;
-  }
-  statsHTML() {
-    const s = G.save.stats;
-    const ms = G.missions ? G.missions.list : [];
-    const line = (a, b) => `<div class="statline"><span>${a}</span><b>${b}</b></div>`;
-    let h = '<h3>剧情任务</h3>';
-    ms.forEach((m, k) => { h += `<div class="statline ${k < G.save.mission ? 'mission-done' : ''}"><span>${k + 1}. ${m.title}</span><b>${k < G.save.mission ? '✔ 完成' : k === G.save.mission ? '进行中' : '🔒'}</b></div>`; });
-    h += '<h3>统计</h3>';
-    h += line('游戏时长', `${Math.floor(s.playTime / 60)} 分钟`) + line('总资产', fmtMoney(G.save.money)) + line('隐藏徽章', `${G.save.badges.length} / 25`) +
-      line('独特特技', `${G.save.stunts.length} / 6`) + line('击倒', s.kills) + line('抢车次数', s.carsStolen) + line('驾驶里程', (s.distance / 1000).toFixed(1) + ' km') +
-      line('最高漂移', s.bestDrift.toLocaleString()) + line('最高通缉', '★'.repeat(s.maxWanted) || '-') + line('出租车收入', fmtMoney(s.taxiFares)) + line('街头赛胜场', s.racesWon) +
-      line('阵亡', s.deaths) + line('被捕', s.busted);
-    return h;
+  update(dt) {
+    const g = this.g, pl = g.player;
+    this.notifyT -= dt;
+    if (this.notifyT <= 0) this.el('#notify').classList.remove('on');
+    this.bigT -= dt;
+    if (this.bigT <= 0) this.el('#big').classList.remove('on');
+    this.el('.bar.hp i').style.width = Math.max(0, pl.health) + '%';
+    this.el('.bar.ar i').style.width = Math.max(0, pl.armor) + '%';
+    this.el('.bar.ar').style.display = pl.armor > 0 ? '' : 'none';
+    this.el('#money').textContent = '$' + Math.floor(g.money).toLocaleString('en-US');
+    const lv = g.police.level;
+    this.el('#wanted').innerHTML = lv ? Array.from({ length: 5 }, (_, i) => `<span class="${i < lv ? 'on' : ''}">★</span>`).join('') : '';
+    if (this.lastWeapon !== pl.weapon) {
+      this.lastWeapon = pl.weapon;
+      sprite(this.el('#weapon .icon'), ICONS[pl.weapon], 0.9);
+    }
+    const w = WEAPONS[pl.weapon], slot = pl.weapons[pl.weapon];
+    this.el('#weapon .ammo').textContent = w.melee ? '' : `${slot.clip} / ${slot.ammo}`;
+    const aiming = !pl.vehicle && !w.melee && (g.ctl.aim || g.ctl.fire);
+    const ch = this.el('#crosshair');
+    ch.className = aiming ? (w.scope ? 'scope' : 'on') : '';
+    const sp = this.el('#speedo');
+    sp.textContent = pl.vehicle ? `${Math.round(pl.vehicle.speed * 3.6)} km/h` : '';
+    this.drawRadar();
   }
 }

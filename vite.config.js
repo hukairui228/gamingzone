@@ -1,12 +1,8 @@
 import { defineConfig } from 'vite';
-import { viteSingleFile } from 'vite-plugin-singlefile';
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
   base: './',
-  plugins: mode === 'single' ? [viteSingleFile()] : [],
-  build: {
-    outDir: mode === 'single' ? 'dist-single' : 'dist',
-    chunkSizeWarningLimit: 4000,
-    target: 'es2020',
-  },
-}));
+  // no auto-reload: several automated test sessions share one dev server
+  server: { hmr: false },
+  build: { outDir: 'dist', chunkSizeWarningLimit: 4000, target: 'es2020' },
+});

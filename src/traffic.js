@@ -1,322 +1,177 @@
-// Traffic + AI driving (cruise / pursue / flee / route) over the road graph.
-import { G } from './state.js';
-import { nodes, HALF, LANE_OFF, P, NX, NZ, nearestNode, findPath, lightPhase, hasLights, isRoad, CITY } from './layout.js';
-import { clamp, angleDiff, rand, pick, chance } from './util.js';
-import { TRAFFIC_MIX, CAR_TYPES } from './vehicle.js';
-import { randomOutfit } from './character.js';
+import * as THREE from 'three';
+import { Vehicle } from './vehicle.js';
 
-function laneGeom(a, b, lane) {
-  const A = nodes[a], B = nodes[b];
-  let dx = B.x - A.x, dz = B.z - A.z; const L = Math.hypot(dx, dz); dx /= L; dz /= L;
-  const rx = -dz, rz = dx, off = LANE_OFF[lane];
-  return { A, B, dx, dz, rx, rz, off, L };
-}
+const CIVIL = ['car_taxi', 'car_buck', 'car_cooperv8_berlin', 'car_cooperv8_hatchback', 'car_homm', 'car_laufer', 'car_tawny',
+  'car_plymouth', 'car_suv_detour', 'car_truck', 'car_van', 'car_vamp', 'car_limo', 'car_delivery', 'car_lamb'];
+const WEIGHT = { car_lamb: 0.3, car_limo: 0.4, car_delivery: 0.6, car_laufer: 0.6 };
+const _pt = {}, _v = new THREE.Vector3();
 
-export class Driver {
-  constructor(v, opts = {}) {
-    this.v = v;
-    this.mode = opts.mode || 'cruise';
-    this.lane = opts.lane ?? (chance(0.5) ? 0 : 1);
-    this.cruise = opts.speed || rand(10.5, 14.5);
-    this.queue = [];
-    this.from = null; this.to = null;
-    this.stuck = 0; this.reverseT = 0;
-    this.target = opts.target || null;
-    this.aggressive = !!opts.aggressive;
-    this.ignoreLights = !!opts.ignoreLights;
-    this.hornT = 0;
-    this.route = opts.route || null; // array of {x,z}
-    this.routeIdx = 0;
-    this.blockedT = 0;
-    this.onArrive = opts.onArrive || null;
-    this.slowRadius = opts.slowRadius ?? 0;
+export class Traffic {
+  constructor(game) {
+    this.g = game;
+    this.cars = [];
+    this.max = 22;
+    this.timer = 0;
+    this.loading = 0;
   }
 
-  setEdge(a, b) {
-    this.from = a; this.to = b;
-    this.queue.length = 0;
-    this.pushEdge(a, b);
+  pickModel() {
+    const tot = CIVIL.reduce((a, m) => a + (WEIGHT[m] || 1), 0);
+    let r = Math.random() * tot;
+    for (const m of CIVIL) { r -= WEIGHT[m] || 1; if (r <= 0) return m; }
+    return CIVIL[0];
   }
 
-  pushEdge(a, b) {
-    const g = laneGeom(a, b, this.lane);
-    const s0 = HALF + 3, s1 = g.L - HALF - 5.2;
-    for (let s = s0; s <= s1; s += 9) this.queue.push({ x: g.A.x + g.dx * s + g.rx * g.off, z: g.A.z + g.dz * s + g.rz * g.off });
-    this.queue.push({ x: g.A.x + g.dx * s1 + g.rx * g.off, z: g.A.z + g.dz * s1 + g.rz * g.off, stop: b, axis: Math.abs(g.dz) > 0.5 ? 'ns' : 'ew' });
-    this.lastEdge = { a, b, g };
-  }
-
-  chooseNext() {
-    const { a, b, g } = this.lastEdge;
-    const B = nodes[b];
-    let opts = B.links.filter((n) => n !== a);
-    if (!opts.length) opts = [a];
-    let c;
-    if (this.mode === 'flee') {
-      const pl = G.player;
-      c = opts.reduce((best, n) => { const d = Math.hypot(nodes[n].x - pl.x, nodes[n].z - pl.z) + rand(0, 40); return d > best.d ? { n, d } : best; }, { n: opts[0], d: -1 }).n;
-    } else if (this.mode === 'pursue' && this.path && this.path.length) {
-      c = this.path.shift();
-      if (!B.links.includes(c)) c = pick(opts);
-    } else {
-      // prefer straight
-      const straight = opts.find((n) => { const N = nodes[n]; const dx = N.x - B.x, dz = N.z - B.z, L = Math.hypot(dx, dz); return dx / L * g.dx + dz / L * g.dz > 0.9; });
-      c = straight && chance(0.55) ? straight : pick(opts);
-    }
-    // turn curve
-    const g2 = laneGeom(b, c, this.lane);
-    const e = this.queue.length ? this.queue[this.queue.length - 1] : { x: B.x, z: B.z };
-    const sx = B.x + g2.dx * (HALF + 3) + g2.rx * g2.off, sz = B.z + g2.dz * (HALF + 3) + g2.rz * g2.off;
-    const dot = g.dx * g2.dx + g.dz * g2.dz;
-    if (dot < -0.5) {
-      // U-turn: wide arc
-      for (let k = 1; k <= 6; k++) { const t = k / 7; const ang = Math.PI * t; this.queue.push({ x: B.x + g.dx * Math.sin(ang) * 4 + g.rx * g.off * Math.cos(ang), z: B.z + g.dz * Math.sin(ang) * 4 + g.rz * g.off * Math.cos(ang), turn: true }); }
-    } else if (dot < 0.5) {
-      const cx = B.x + g.rx * g.off + g2.rx * g2.off, cz = B.z + g.rz * g.off + g2.rz * g2.off;
-      for (let k = 1; k <= 5; k++) {
-        const t = k / 6, u = 1 - t;
-        this.queue.push({ x: u * u * e.x + 2 * u * t * cx + t * t * sx, z: u * u * e.z + 2 * u * t * cz + t * t * sz, turn: true });
-      }
-    }
-    this.pushEdge(b, c);
-  }
-
-  // initialise on nearest lane to vehicle position
-  snapToRoad() {
-    const v = this.v;
-    const n = nearestNode(v.x, v.z);
-    let best = null, bd = Infinity;
-    for (const m of n.links) {
-      for (const [a, b] of [[n.id, m], [m, n.id]]) {
-        const g = laneGeom(a, b, this.lane);
-        const px = v.x - (g.A.x + g.rx * g.off), pz = v.z - (g.A.z + g.rz * g.off);
-        const s = clamp(px * g.dx + pz * g.dz, 0, g.L);
-        const qx = g.A.x + g.dx * s + g.rx * g.off, qz = g.A.z + g.dz * s + g.rz * g.off;
-        let d = Math.hypot(qx - v.x, qz - v.z);
-        d += Math.abs(angleDiff(v.h, Math.atan2(g.dx, g.dz))) * 6;
-        if (d < bd) { bd = d; best = { a, b, s }; }
-      }
-    }
-    if (best) {
-      this.setEdge(best.a, best.b);
-      // drop points behind
-      const v2 = this.v;
-      while (this.queue.length > 1) {
-        const q = this.queue[0];
-        const ahead = (q.x - v2.x) * Math.sin(v2.h) + (q.z - v2.z) * Math.cos(v2.h);
-        if (ahead < 3) this.queue.shift(); else break;
-      }
-    }
-  }
-
-  update(dt) {
-    const v = this.v;
-    const inp = v.input;
-    if (v.dead || v.driver === 'player') return;
-    if (!v.driver) { inp.throttle = 0; inp.steer = 0; inp.handbrake = true; return; }
-    if (this.mode === 'parked') { inp.throttle = 0; inp.handbrake = true; inp.steer = 0; return; }
-    let tx, tz, target = this.cruise;
-    const sp = v.vF;
-    // ---- choose target point ----
-    if (this.mode === 'pursue' || this.mode === 'ram') {
-      const T = this.target || G.player;
-      const d = Math.hypot(T.x - v.x, T.z - v.z);
-      const los = d < 60 && G.world.statics.lineOfSight(v.x, v.y + 1.2, v.z, T.x, (T.y || 0) + 1.2, T.z);
-      if (los || d < 22) {
-        const tv = T.inVehicle || (T.vx !== undefined ? T : null);
-        const lead = clamp(d / 30, 0, 1.2);
-        tx = T.x + (tv ? (tv.vx || 0) * lead : 0); tz = T.z + (tv ? (tv.vz || 0) * lead : 0);
-        target = this.aggressive ? 60 : 38;
-        if (d < 14 && !(T.inVehicle) && this.mode === 'pursue') target = Math.max(0, (d - 7) * 1.5);
-        this.queue.length = 0;
-      } else {
-        this.repathT = (this.repathT || 0) - dt;
-        if (this.repathT <= 0 || !this.queue.length) {
-          this.repathT = 2.5;
-          const from = nearestNode(v.x, v.z), to = nearestNode(T.x, T.z);
-          this.path = findPath(from.id, to.id);
-          this.queue.length = 0;
-          if (this.path.length >= 2) { this.path.shift(); const nx = this.path.shift(); this.lane = 0; this.lastEdge = null; this.setEdge(from.id, nx); }
-          else { this.queue.push({ x: T.x, z: T.z }); }
-        }
-        target = 34;
-      }
-    } else if (this.mode === 'route') {
-      const r = this.route[this.routeIdx];
-      if (!r) { inp.throttle = 0; inp.handbrake = true; inp.steer = 0; return; }
-      tx = r.x; tz = r.z;
-      target = r.speed || this.cruise;
-      const d = Math.hypot(tx - v.x, tz - v.z);
-      if (d < (r.radius || 10)) {
-        this.routeIdx++;
-        if (this.routeIdx >= this.route.length && this.onArrive) this.onArrive(this);
-      }
-      // look ahead slowdown at sharp corners
-      const nxt = this.route[this.routeIdx + 1];
-      if (nxt && d < 30) {
-        const a1 = Math.atan2(tx - v.x, tz - v.z), a2 = Math.atan2(nxt.x - tx, nxt.z - tz);
-        const turn = Math.abs(angleDiff(a1, a2));
-        if (turn > 0.8) target = Math.min(target, 13 + (1 - turn / Math.PI) * 10 + d * 0.4);
-      }
-    }
-    if (tx === undefined) {
-      if (!this.queue.length || !this.lastEdge) this.snapToRoad();
-      if (this.queue.length < 8 && this.lastEdge) this.chooseNext();
-      const look = clamp(Math.abs(sp) * 0.35, 3.5, 9);
-      while (this.queue.length > 1) {
-        const q = this.queue[0];
-        const d = Math.hypot(q.x - v.x, q.z - v.z);
-        const ahead = (q.x - v.x) * Math.sin(v.h) + (q.z - v.z) * Math.cos(v.h);
-        if (d < look || ahead < 0.5) {
-          if (q.stop !== undefined) this.passedStop = q.stop;
-          this.queue.shift();
-        } else break;
-      }
-      const q = this.queue[0];
-      if (!q) return;
-      tx = q.x; tz = q.z;
-      if (this.queue.slice(0, 3).some((p) => p.turn)) target = Math.min(target, this.mode === 'flee' ? 15 : 8);
-      if (this.mode === 'flee') target = Math.max(target, 24);
-      // traffic lights
-      if (!this.ignoreLights && this.mode === 'cruise') {
-        const sq = this.queue.find((p) => p.stop !== undefined);
-        if (sq) {
-          const ds = Math.hypot(sq.x - v.x, sq.z - v.z);
-          const n = nodes[sq.stop];
-          if (hasLights(n) && ds < 30) {
-            const ph = lightPhase(n.id, G.time);
-            if (ph !== sq.axis && ds > 1.2) {
-              const yellowClose = ph === 'y_' + sq.axis && ds < 8;
-              if (!yellowClose) target = Math.min(target, Math.max(0, (ds - 1.5) * 0.9));
-            }
-          }
-        }
-      }
-    }
-    // ---- obstacle awareness (cruise / flee / route) ----
-    if (this.mode !== 'pursue' && this.mode !== 'ram') {
-      const fx = Math.sin(v.h), fz = Math.cos(v.h);
-      let minD = 99, blockSpeed = 0, blocker = null;
-      for (const o of G.vehicles.list) {
-        if (o === v) continue;
-        const dx = o.x - v.x, dz = o.z - v.z;
-        const ahead = dx * fx + dz * fz;
-        if (ahead < 0 || ahead > 22) continue;
-        const lat = Math.abs(dx * fz - dz * fx);
-        if (lat > 2.4) continue;
-        if (ahead < minD) { minD = ahead; blockSpeed = Math.max(0, o.vx * fx + o.vz * fz); blocker = o; }
-      }
-      // pedestrians / player
-      const pl = G.player;
-      const chk = [pl.inVehicle ? null : pl.char];
-      for (const p of G.pedSys.list) if (!p.char.dead && Math.abs(p.x - v.x) < 20 && Math.abs(p.z - v.z) < 20) chk.push(p.char);
-      for (const c of chk) {
-        if (!c) continue;
-        const dx = c.x - v.x, dz = c.z - v.z;
-        const ahead = dx * fx + dz * fz;
-        if (ahead < 0 || ahead > 14) continue;
-        if (Math.abs(dx * fz - dz * fx) > 1.8) continue;
-        if (ahead < minD) { minD = ahead; blockSpeed = 0; blocker = c === pl.char ? 'player' : 'ped'; }
-      }
-      if (minD < 99 && this.mode !== 'flee') {
-        const L = v.t.L;
-        target = Math.min(target, blockSpeed + Math.max(0, minD - L - 2.5) * 0.8);
-        if (minD < L + 3 && Math.abs(sp) < 1) {
-          this.blockedT += dt;
-          if (this.blockedT > 2 && blocker === 'player' && this.hornT <= 0) { G.audio && G.audio.horn(v.x, v.z, true); this.hornT = rand(2, 4); }
-        } else this.blockedT = 0;
-      }
-      this.hornT -= dt;
-    }
-    // ---- steering ----
-    const hd = Math.atan2(tx - v.x, tz - v.z);
-    let err = angleDiff(v.h, hd);
-    let steer = clamp(-err * 2.2, -1, 1);
-    // throttle
-    let thr = clamp((target - sp) * 0.35, -1, 1);
-    if (Math.abs(err) > 1.2 && sp > 8) thr = Math.min(thr, -0.3);
-    // stuck recovery
-    if (this.reverseT > 0) {
-      this.reverseT -= dt;
-      inp.throttle = -1; inp.steer = -this.revSteer; inp.handbrake = false; inp.nitro = false;
-      return;
-    }
-    if (thr > 0.3 && Math.abs(sp) < 1.2) {
-      this.stuck += dt;
-      if (this.stuck > (this.mode === 'cruise' ? 4 : 1.4)) { this.stuck = 0; this.reverseT = rand(0.8, 1.4); this.revSteer = steer >= 0 ? 1 : -1; if (this.mode === 'cruise') this.lastEdge = null; }
-    } else this.stuck = Math.max(0, this.stuck - dt);
-    inp.throttle = thr;
-    inp.steer = steer;
-    inp.handbrake = (this.mode === 'pursue' || this.mode === 'route' || this.mode === 'ram') && Math.abs(err) > 1.0 && sp > 14;
-    inp.nitro = this.aggressive && Math.abs(err) < 0.2 && sp > 10 && v.nitroMax > 0;
-  }
-}
-
-export class TrafficSystem {
-  constructor() {
-    this.max = 26;
-    this.spawnT = 0;
-  }
-  count() { let n = 0; for (const v of G.vehicles.list) if (v.traffic && !v.dead) n++; return n; }
-
-  spawnOne() {
-    const pl = G.player;
-    // random node near player
-    const n0 = nearestNode(pl.x + rand(-200, 200), pl.z + rand(-200, 200));
-    if (n0.island) return;
-    const m = pick(n0.links);
-    if (m === undefined || nodes[m].island) return;
-    const [a, b] = chance(0.5) ? [n0.id, m] : [m, n0.id];
-    const lane = chance(0.5) ? 0 : 1;
-    const g = laneGeom(a, b, lane);
-    const s = rand(HALF + 6, g.L - HALF - 12);
-    const x = g.A.x + g.dx * s + g.rx * g.off, z = g.A.z + g.dz * s + g.rz * g.off;
-    const d = Math.hypot(x - pl.x, z - pl.z);
-    if (d < 75 || d > 230) return;
-    // don't spawn on top of other cars
-    for (const v of G.vehicles.list) if (Math.abs(v.x - x) < 9 && Math.abs(v.z - z) < 9) return;
-    // avoid spawning in view if close
-    if (d < 120 && this.inView(x, z)) return;
-    const type = pick(TRAFFIC_MIX);
-    const v = G.vehicles.spawn(type, x, z, Math.atan2(g.dx, g.dz));
-    v.traffic = true;
-    v.driver = { team: 'civ', outfit: randomOutfit() };
-    const ai = new Driver(v, { lane });
-    ai.setEdge(a, b);
-    while (ai.queue.length > 1 && ((ai.queue[0].x - x) * g.dx + (ai.queue[0].z - z) * g.dz) < 2) ai.queue.shift();
-    v.ai = ai;
-    const sp = ai.cruise * 0.8;
-    v.vx = g.dx * sp; v.vz = g.dz * sp;
+  async spawn(model, lane, opts = {}) {
+    const g = this.g, R = g.roads;
+    this.loading++;
+    const v = await new Vehicle(model).load().finally(() => this.loading--);
+    const e = R.edges[lane.e];
+    R.point(e, lane.dir, lane.s, R.laneOffset(e), _pt);
+    const y = g.world.height(_pt.x, _pt.z, 60);
+    if (y === -Infinity) return null;
+    v.place(_pt.x, y, _pt.z, Math.atan2(_pt.tx, _pt.tz));
+    v.ai = { e: lane.e, dir: lane.dir, s: lane.s, speed: opts.speed ?? 10, cruise: opts.cruise ?? 9 + Math.random() * 5, mode: 'lane', stuck: 0 };
+    v.driver = opts.driver ?? 'npc';
+    g.scene.add(v.root);
+    this.cars.push(v);
     return v;
   }
 
-  inView(x, z) {
-    const cam = G.camera;
-    const dx = x - cam.position.x, dz = z - cam.position.z;
-    const fx = -Math.sin(cam.rotation.y), fz = -Math.cos(cam.rotation.y);
-    const cd = cam.getWorldDirection ? null : null;
-    void cd;
-    const dir = G._camDir;
-    const L = Math.hypot(dx, dz) || 1;
-    const dot = (dx * dir.x + dz * dir.z) / (L * (Math.hypot(dir.x, dir.z) || 1));
-    void fx; void fz;
-    return dot > 0.55;
+  remove(v) {
+    const i = this.cars.indexOf(v);
+    if (i >= 0) this.cars.splice(i, 1);
+    this.g.scene.remove(v.root);
+    if (this.g.audio) this.g.audio.stopLoop('npc_' + v.root.id);
+  }
+
+  /** Release a car from lane-following (player jacked it, crash, police). */
+  detach(v) {
+    const i = this.cars.indexOf(v);
+    if (i >= 0) this.cars.splice(i, 1);
+    v.ai = null;
   }
 
   update(dt) {
-    this.spawnT -= dt;
-    const night = G.sky ? G.sky.night : 0;
-    const max = Math.round(this.max * (G.settings.quality === 'low' ? 0.6 : 1) * (1 - night * 0.3));
-    if (this.spawnT <= 0) {
-      this.spawnT = 0.25;
-      if (this.count() < max) this.spawnOne();
+    const g = this.g, R = g.roads, P = g.focus;
+    // spawn / despawn
+    this.timer -= dt;
+    if (this.timer <= 0) {
+      this.timer = 0.4;
+      for (const v of [...this.cars]) {
+        const d = Math.hypot(v.pos.x - P.x, v.pos.z - P.z);
+        if (d > 260 && !v.mission) this.remove(v);
+      }
+      if (this.cars.length + this.loading < this.max * g.trafficDensity) {
+        for (let k = 0; k < 6; k++) {
+          const lane = R.randomLane();
+          const e = R.edges[lane.e];
+          R.point(e, lane.dir, lane.s, R.laneOffset(e), _pt);
+          const d = Math.hypot(_pt.x - P.x, _pt.z - P.z);
+          if (d < 90 || d > 220) continue;
+          if (this.cars.some((c) => Math.hypot(c.pos.x - _pt.x, c.pos.z - _pt.z) < 14)) continue;
+          this.spawn(this.pickModel(), lane);
+          break;
+        }
+      }
     }
-    const pl = G.player;
-    for (const v of G.vehicles.list.slice()) {
-      if (!v.traffic || v.persistent || v.driver === 'player') continue;
-      const d = Math.hypot(v.x - pl.x, v.z - pl.z);
-      if (d > 280 || (v.dead && d > 120)) G.vehicles.remove(v);
-      else if (!v.driver && !v.dead && d > 160) G.vehicles.remove(v);
+    for (const v of this.cars) this.drive(v, dt);
+  }
+
+  drive(v, dt) {
+    const g = this.g, R = g.roads, ai = v.ai;
+    if (!ai) return;
+    if (ai.mode === 'physics') {
+      v.update(dt, { throttle: 0, steer: 0, handbrake: true }, g.world);
+      ai.calm = (ai.calm || 0) + dt;
+      if (ai.calm > 6 && v.speed < 0.5 && v.health > 0 && v.driver) this.reattach(v);
+      return;
+    }
+    if (ai.mode === 'parked') return;
+    let e = R.edges[ai.e];
+    // obstacle ahead: other cars / player / peds
+    const fx = Math.sin(v.yaw), fz = Math.cos(v.yaw);
+    let block = 99;
+    const scan = (x, z, r) => {
+      const dx = x - v.pos.x, dz = z - v.pos.z;
+      const fwd = dx * fx + dz * fz;
+      if (fwd < 0 || fwd > 22) return;
+      const side = Math.abs(dx * fz - dz * fx);
+      if (side < 2.2 + r) block = Math.min(block, fwd);
+    };
+    for (const o of g.vehicles()) if (o !== v) scan(o.pos.x, o.pos.z, 0.6);
+    if (!g.player.vehicle) scan(g.player.pos.x, g.player.pos.z, 0.3);
+    for (const p of g.peds.list) if (!p.dead) scan(p.pos.x, p.pos.z, 0.2);
+    let target = ai.cruise;
+    if (block < 22) target = Math.min(target, Math.max(0, (block - 6) * 1.1));
+    // slow for curves
+    R.point(e, ai.dir, ai.s + 10, 0, _pt);
+    const curve = Math.abs(Math.atan2(_pt.tx * fz - _pt.tz * fx, _pt.tx * fx + _pt.tz * fz));
+    target = Math.min(target, 16 - curve * 9);
+    if (g.honk && block < 8 && Math.random() < dt * 0.4) g.audio.play('sfx_npc_horn', { vol: g.audioVol(v.pos, 0.6) });
+    ai.speed += THREE.MathUtils.clamp(target - ai.speed, -12 * dt, 4 * dt);
+    ai.s += ai.speed * dt;
+    while (ai.s > e.length) {
+      ai.s -= e.length;
+      const node = ai.dir > 0 ? e.b : e.a;
+      const nx = R.nextEdge(ai.e, node);
+      ai.e = nx.e; ai.dir = nx.dir; e = R.edges[ai.e];
+    }
+    R.point(e, ai.dir, ai.s, R.laneOffset(e), _pt);
+    const k = Math.min(1, dt * 6);
+    v.pos.x += (_pt.x - v.pos.x) * k;
+    v.pos.z += (_pt.z - v.pos.z) * k;
+    const h = g.world.height(v.pos.x, v.pos.z, v.pos.y + 1.5);
+    if (h > -Infinity) v.pos.y += (h - v.pos.y) * Math.min(1, dt * 10);
+    const yaw = Math.atan2(_pt.tx, _pt.tz);
+    let dy = yaw - v.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    v.yaw += dy * Math.min(1, dt * 5);
+    v.vf = ai.speed; v.vs = 0;
+    v.steer = THREE.MathUtils.clamp(-dy * 3, -0.5, 0.5);
+    v.root.rotation.set(0, v.yaw, 0);
+    v.spin += v.vf * dt / v.wheelR;
+    v.pivots.forEach((p) => { p.rotation.x = -v.spin; });
+    if (v.wheels.length === 4) { v.wheels[0].rotation.z = -v.steer; v.wheels[1].rotation.z = -v.steer; }
+  }
+
+  reattach(v) {
+    const R = this.g.roads;
+    const n = R.nearest(v.pos.x, v.pos.z, 12);
+    if (!n) return;
+    const e = R.edges[n.e];
+    R.point(e, 1, n.s, 0, _pt);
+    const dir = _pt.tx * Math.sin(v.yaw) + _pt.tz * Math.cos(v.yaw) > 0 ? 1 : -1;
+    v.ai = { e: n.e, dir, s: dir > 0 ? n.s : e.length - n.s, speed: 0, cruise: 9 + Math.random() * 4, mode: 'lane' };
+  }
+
+  /** Simple impulse response between two cars (approximated by circles). */
+  static collide(a, b, onHit) {
+    const ra = Math.max(a.width, a.length) * 0.42, rb = Math.max(b.width, b.length) * 0.42;
+    const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
+    if (Math.abs(a.pos.y - b.pos.y) > 2.5) return;
+    const d = Math.hypot(dx, dz);
+    if (d > ra + rb || d < 1e-3) return;
+    // refine with oriented boxes: separation along the line between centres
+    const nx = dx / d, nz = dz / d;
+    const ext = (v, x, z) => Math.abs(Math.sin(v.yaw) * x + Math.cos(v.yaw) * z) * v.length * 0.5 +
+      Math.abs(Math.cos(v.yaw) * x - Math.sin(v.yaw) * z) * v.width * 0.5;
+    const pen = ext(a, nx, nz) + ext(b, nx, nz) - d;
+    if (pen <= 0) return;
+    const va = _v.set(Math.sin(a.yaw) * a.vf, 0, Math.cos(a.yaw) * a.vf);
+    const vax = va.x, vaz = va.z;
+    const vbx = Math.sin(b.yaw) * b.vf, vbz = Math.cos(b.yaw) * b.vf;
+    const rel = (vax - vbx) * nx + (vaz - vbz) * nz;
+    const ma = a.def.mass || 1, mb = b.def.mass || 1;
+    a.pos.x -= nx * pen * mb / (ma + mb); a.pos.z -= nz * pen * mb / (ma + mb);
+    b.pos.x += nx * pen * ma / (ma + mb); b.pos.z += nz * pen * ma / (ma + mb);
+    if (rel > 0) {
+      const j = rel * 1.3;
+      const ax = vax - nx * j * mb / (ma + mb), az = vaz - nz * j * mb / (ma + mb);
+      const bx = vbx + nx * j * ma / (ma + mb), bz = vbz + nz * j * ma / (ma + mb);
+      a.vf = ax * Math.sin(a.yaw) + az * Math.cos(a.yaw);
+      b.vf = bx * Math.sin(b.yaw) + bz * Math.cos(b.yaw);
+      b.vs = bx * Math.cos(b.yaw) - bz * Math.sin(b.yaw);
+      if (onHit) onHit(a, b, rel);
     }
   }
 }

@@ -23,7 +23,7 @@ function cityMaterial(b) {
   const night = nightTextureFor(b.texture);
   const m = new THREE.MeshStandardMaterial({
     map, vertexColors: true, roughness: 0.82, metalness: 0,
-    alphaTest: b.alphaTest ? 0.5 : 0, side: THREE.FrontSide,
+    alphaTest: b.alphaTest ? 0.5 : 0, alphaToCoverage: !!b.alphaTest, side: THREE.FrontSide,
     emissiveMap: night ? texture(night) : null,
     emissive: night ? 0xffffff : 0x000000,
   });

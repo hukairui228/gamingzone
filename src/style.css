@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800&family=Noto+Sans+SC:wght@400;700;900&display=swap');
 
 :root {
+  color-scheme: dark;
   --pink: #ff3fa4;
   --cyan: #2ef2ff;
   --gold: #ffd166;

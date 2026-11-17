@@ -183,7 +183,7 @@ function startGame(fresh) {
     G.hud.notify('按 M 打开地图 · Esc 暂停 · 详细操作见菜单');
   } else G.hud.notify('欢迎回来，凯。');
   G.input.wantLock = true;
-  if (!G.input.touchMode) G.renderer.domElement.requestPointerLock?.();
+  if (!G.input.touchMode) G.input.lock();
 }
 
 function spawnGarageCar() {
@@ -202,7 +202,7 @@ G.setPaused = (p, why) => {
   G.pauseWhy = why;
   G.hud.showHUD(!p || why === 'shop');
   if (p && document.pointerLockElement) document.exitPointerLock();
-  if (!p && G.started && !G.input.touchMode && !G.photo) { G.input.wantLock = true; G.renderer.domElement.requestPointerLock?.(); }
+  if (!p && G.started && !G.input.touchMode && !G.photo) { G.input.wantLock = true; G.input.lock(); }
 };
 
 function respawn(kind) {
@@ -259,7 +259,13 @@ function wireEvents() {
 // ---------------- menus ----------------
 function setupMenus() {
   $('btnNew').onclick = () => {
-    if (readSave() && !confirm('开始新游戏会覆盖现有存档，确定吗？')) return;
+    // in-page confirmation (native confirm() dialogs may be blocked in embedded viewers)
+    const b = $('btnNew');
+    if (readSave() && !b.dataset.armed) {
+      b.dataset.armed = '1'; b.textContent = '再点一次：覆盖旧存档开始新游戏';
+      setTimeout(() => { delete b.dataset.armed; b.textContent = '新的游戏'; }, 4000);
+      return;
+    }
     $('title').classList.add('hidden'); newGame();
   };
   $('btnContinue').onclick = () => { $('title').classList.add('hidden'); continueGame(); };

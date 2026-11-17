@@ -31,20 +31,30 @@ export class Input {
     addEventListener('blur', () => { this.keys.clear(); this.mouse.b0 = this.mouse.b2 = false; });
     canvas.addEventListener('mousedown', (e) => {
       if (this.touchMode) return;
-      if (!this.locked && this.wantLock) { canvas.requestPointerLock?.(); }
+      if (!this.locked && this.wantLock) this.lock();
       if (e.button === 0) this.mouse.b0 = true;
       if (e.button === 2) this.mouse.b2 = true;
     });
     addEventListener('mouseup', (e) => { if (e.button === 0) this.mouse.b0 = false; if (e.button === 2) this.mouse.b2 = false; });
     addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('mousemove', (e) => {
-      if (this.locked) { this.mouse.dx += e.movementX; this.mouse.dy += e.movementY; }
+      // with pointer lock: free look. Without (e.g. blocked in an embedded frame): drag with any button held to look
+      if (this.locked || (this.wantLock && !this.touchMode && (this.mouse.b0 || this.mouse.b2) && e.target === canvas)) {
+        this.mouse.dx += e.movementX; this.mouse.dy += e.movementY;
+      }
     });
     addEventListener('wheel', (e) => { this.mouse.wheel += Math.sign(e.deltaY); }, { passive: true });
     document.addEventListener('pointerlockchange', () => { this.locked = document.pointerLockElement === canvas; });
 
     // touch
     if ('ontouchstart' in window || navigator.maxTouchPoints > 0) this.setupTouch();
+  }
+
+  lock() {
+    try {
+      const p = this.canvas.requestPointerLock && this.canvas.requestPointerLock();
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* pointer lock unavailable: drag-to-look fallback is used */ }
   }
 
   setupTouch() {

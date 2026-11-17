@@ -144,6 +144,8 @@ def main(bdae_path, out_dir):
             up = n[:, 1] / (np.linalg.norm(n, axis=1) + 1e-9) > 0.55
             ground_p.append(p.astype('<f4')); ground_t.append((t[up] + gn).ravel()); gn += len(p)
     gp = np.concatenate(ground_p).astype('<f4'); gt = np.concatenate([x.ravel() for x in ground_t]).astype('<u4')
+    used, gt = np.unique(gt, return_inverse=True)  # drop vertices no walkable triangle references
+    gp, gt = gp[used], gt.astype('<u4')
     with open(os.path.join(out_dir, 'ground.bin'), 'wb') as f:
         f.write(struct.pack('<II', len(gp), len(gt)))
         f.write(gp.tobytes()); f.write(gt.tobytes())

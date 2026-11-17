@@ -6,7 +6,18 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { setAnisotropy, texture } from './assets.js';
-import { nightUniform } from './city.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { nightUniform, glowMaterials } from './city.js';
+
+// Final grade: a touch more saturation/contrast for the vivid Miami look, soft vignette.
+const Grade = {
+  uniforms: { tDiffuse: { value: null }, uSat: { value: 1.12 }, uContrast: { value: 1.04 }, uVignette: { value: 0.22 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uSat, uContrast, uVignette; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv); float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+      c.rgb = mix(vec3(l), c.rgb, uSat); c.rgb = (c.rgb - 0.5) * uContrast + 0.5;
+      vec2 q = vUv - 0.5; c.rgb *= 1.0 - dot(q, q) * uVignette; gl_FragColor = c; }`,
+};
 
 const QUALITY = {
   low: { pr: 0.75, shadow: 0, bloom: false, water: false, msaa: 0 },
@@ -34,14 +45,22 @@ export class Gfx {
     const su = this.sky.material.uniforms;
     su.turbidity.value = 2; su.rayleigh.value = 2.2; su.mieCoefficient.value = 0.003; su.mieDirectionalG.value = 0.86;
     this.skyGain = { value: 0.42 };
+    this.skyNight = { value: 0 };
     this.scene.add(this.sky);
     this.skyScene = new THREE.Scene();
     this.envSky = new Sky(); this.envSky.scale.setScalar(100);
     this.skyScene.add(this.envSky);
     for (const s of [this.sky, this.envSky]) {
       s.material.uniforms.uGain = this.skyGain;
-      s.material.fragmentShader = 'uniform float uGain;\n' + s.material.fragmentShader
-        .replace('gl_FragColor = vec4( retColor, 1.0 );', 'gl_FragColor = vec4( retColor * uGain, 1.0 );');
+      s.material.uniforms.uNight = this.skyNight;
+      // night: deep blue gradient with a few stars instead of the scattering model's brown
+      s.material.fragmentShader = 'uniform float uGain;\nuniform float uNight;\n' + s.material.fragmentShader
+        .replace('gl_FragColor = vec4( retColor, 1.0 );', `
+          vec3 dir = normalize(vWorldPosition - cameraPosition);
+          vec3 nightSky = mix(vec3(0.035, 0.05, 0.09), vec3(0.004, 0.008, 0.025), clamp(dir.y * 2.0, 0.0, 1.0));
+          float st = step(0.9975, fract(sin(dot(floor(dir * 420.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453)) * smoothstep(0.05, 0.3, dir.y);
+          nightSky += st * 0.6;
+          gl_FragColor = vec4(mix(retColor * uGain, nightSky, uNight), 1.0);`);
     }
     this.pmrem = new THREE.PMREMGenerator(r);
 
@@ -75,7 +94,7 @@ export class Gfx {
 
     this.hour = 11;
     this.envTimer = 0;
-    this.setQuality(localStorage.getItem('gm_quality') || 'high');
+    this.setQuality(localStorage.getItem('gm_quality') || (matchMedia('(pointer: coarse)').matches ? 'medium' : 'high'));
     addEventListener('resize', () => this.resize());
   }
 
@@ -127,6 +146,7 @@ export class Gfx {
       this.composer.addPass(this.bloom);
     }
     this.composer.addPass(new OutputPass());
+    this.composer.addPass(new ShaderPass(Grade));
   }
 
   resize() {
@@ -163,14 +183,15 @@ export class Gfx {
     this.sun.position.set(fx, 0, fz).addScaledVector(lightDir, 500);
     this.sun.target.updateMatrixWorld();
     this.sun.color.setRGB(1, 0.94 - golden * 0.3, 0.86 - golden * 0.5).lerp(new THREE.Color(0x8fa6ff), night);
-    this.sun.intensity = 2.6 * day + 0.3 * night;
-    this.hemi.intensity = 0.9 * day + 0.22 * night;
-    this.hemi.color.setRGB(0.74, 0.85, 0.96).lerp(new THREE.Color(0x203050), night);
+    this.sun.intensity = 2.6 * day + 0.22 * night;
+    this.hemi.intensity = 0.9 * day + 0.14 * night;
+    this.hemi.color.setRGB(0.74, 0.85, 0.96).lerp(new THREE.Color(0x3a5590), night);
     this.hemi.groundColor.setRGB(0.61, 0.54, 0.42).lerp(new THREE.Color(0x101418), night);
 
     const fogDay = new THREE.Color(0xa9cbe8).lerp(new THREE.Color(0xf0b88a), golden);
     this.scene.fog.color.copy(fogDay).lerp(new THREE.Color(0x0a0f1c), night);
-    this.renderer.toneMappingExposure = 0.9 + night * 0.3;
+    this.renderer.toneMappingExposure = 0.9 + night * 0.15;
+    this.skyNight.value = THREE.MathUtils.smoothstep(night, 0.2, 0.9);
 
     const wu = this.water.material.uniforms;
     wu.time.value += dt * 0.5;
@@ -184,9 +205,10 @@ export class Gfx {
       if (this.envRT) this.envRT.dispose();
       this.envRT = this.pmrem.fromScene(this.skyScene);
       this.scene.environment = this.envRT.texture;
-      this.scene.environmentIntensity = 0.35 * day + 0.06;
+      this.scene.environmentIntensity = 0.35 * day + 0.03;
     }
     if (this.bloom) this.bloom.strength = 0.15 + night * 0.5;
+    for (const m of glowMaterials) m.opacity = 0.12 + night * 0.88;
   }
 
   render() {

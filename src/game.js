@@ -16,6 +16,8 @@ import { Vehicle } from './vehicle.js';
 import { buildModel } from './models.js';
 import { json } from './assets.js';
 import { Missions } from './missions.js';
+import { Services } from './services.js';
+import { Achievements } from './achievements.js';
 
 // Landmarks (world metres, Y-up) picked from the original minimap.
 export const PLACES = {
@@ -47,7 +49,7 @@ export class Game {
     this.pickups = [];
     this.projectiles = [];
     this.money = 0;
-    this.trafficDensity = 1; this.pedDensity = 1;
+    this.trafficDensity = this.pedDensity = this.gfx.quality === 'low' ? 0.55 : 1;
     this.focus = new THREE.Vector3();
     this.state = 'loading';
     this.ctl = {};
@@ -64,6 +66,8 @@ export class Game {
     for (const f of ['ch1', 'ch2', 'ch3', 'ch4', 'ch5', 'chx', 'chr', 'global', 'menu'])
       this.texts[f] = await json(`text/${f}.chinese.json`).catch(() => []);
     this.missions = new Missions(this);
+    this.services = new Services(this);
+    this.achievements = new Achievements(this);
     H.loading(0.8, '准备街道…');
     this.load();
     const [sx, sz] = this.spawnPoint || PLACES.start;
@@ -72,6 +76,7 @@ export class Game {
     // warm up a few cars and pedestrians around the player
     for (let i = 0; i < 4; i++) { this.traffic.timer = 0; this.traffic.update(0.016); this.peds.timer = 0; this.peds.update(0.016); }
     this.spawnPickups();
+    this.services.init().then(() => { this.servicesReady = true; });
     H.loading(1, '');
     window.__ready = true;
     this.title();
@@ -160,6 +165,7 @@ export class Game {
         <button data-a="map">${this.t('menu', 53) || '地图'}</button>
         <button data-a="missions">任务选择</button>
         ${this.mission ? '<button data-a="abort">放弃任务</button>' : ''}
+        <button data-a="ach">${this.t('menu', 104) || '成就'}</button>
         <button data-a="settings">${this.t('menu', 51) || '设置'}</button>
         <button data-a="help">操作说明</button>
         <button data-a="title">主菜单</button>
@@ -174,6 +180,7 @@ export class Game {
       if (a === 'missions') this.missionMenu(() => { this.state = 'play'; this.pause(); });
       if (a === 'settings') this.settingsMenu(() => { this.state = 'play'; this.pause(); });
       if (a === 'help') this.helpMenu(() => { this.state = 'play'; this.pause(); });
+      if (a === 'ach') { const sc = this.hud.screen(`<h2>${this.t('menu', 104)}</h2><div class="help missions">${this.achievements.html()}</div><div class="menu" style="margin-top:12px"><button data-a="back">${this.t('menu', 43)}</button></div>`); sc.onclick = (ev) => { if (ev.target.dataset.a === 'back') { this.state = 'play'; this.pause(); } }; }
       if (a === 'title') { this.save(); this.missions.abort(); this.title(); }
     };
   }
@@ -212,7 +219,7 @@ export class Game {
       const k = e.target.dataset.k;
       if (!k) return;
       const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-      if (k === 'quality') this.gfx.setQuality(v);
+      if (k === 'quality') { this.gfx.setQuality(v); this.trafficDensity = this.pedDensity = v === 'low' ? 0.55 : 1; }
       else if (k === 'hour') this.gfx.hour = +v;
       else S[k] = typeof S[k] === 'number' ? +v : v;
       if (k === 'sfx' && this.audio.sfxBus) this.audio.sfxBus.gain.value = +v;
@@ -226,7 +233,7 @@ export class Game {
     const s = this.hud.screen(`<h2>${this.t('menu', 19) || '操作'}</h2><div class="help">
       <b>WASD / 方向键</b> 移动 · 驾驶<br><b>鼠标</b> 视角 · <b>左键</b> 开火/出拳 · <b>右键</b> 瞄准<br>
       <b>Shift</b> 冲刺 · <b>空格</b> 跳跃 / 手刹<br><b>F / Enter</b> 上下车（可劫车）<br>
-      <b>Q / E / 滚轮</b> 切换武器 · <b>R</b> 切换电台 · <b>H</b> 喇叭<br><b>M / Tab</b> 地图（点击设置导航）· <b>Esc / P</b> 暂停<br>
+      <b>Q / E / 滚轮</b> 切换武器 · <b>R</b> 切换电台 · <b>H</b> 喇叭<br><b>T</b> 驾驶出租车/救护车/送货车时开始支线工作<br>直升机：<b>空格</b> 上升 · <b>Shift</b> 下降<br><b>M / Tab</b> 地图（点击设置导航）· <b>Esc / P</b> 暂停<br>
       触屏：左侧摇杆移动，右侧拖动视角，按钮操作</div><div class="menu" style="margin-top:14px"><button data-a="back">${this.t('menu', 43) || '返回'}</button></div>`);
     s.onclick = (e) => { if (e.target.dataset.a === 'back') back(); };
   }
@@ -393,6 +400,7 @@ export class Game {
   onPedKilled(p, kind) {
     this.stats.kills++;
     if (p.kind === 'cop') this.stats.copsKilled = (this.stats.copsKilled || 0) + 1;
+    else if (p.kind === 'civ' && !p.hostile) this.stats.civKills = (this.stats.civKills || 0) + 1;
     if (Math.random() < 0.6 || p.kind !== 'civ') this.dropPickup('money', p.pos.x, p.pos.y, p.pos.z, 10 + Math.floor(Math.random() * 60));
     if (p.weapon && Math.random() < 0.7) this.dropPickup(p.weapon, p.pos.x + 0.6, p.pos.y, p.pos.z, 20);
     if (p.onDeath) p.onDeath(kind);
@@ -499,6 +507,8 @@ export class Game {
       this.update(dt, ctl);
     } else if (this.state === 'pause') {
       if (ctl.pause) this.resume();
+    } else if (this.state === 'shop') {
+      if (ctl.pause) this.services.close();
     } else if (this.state === 'title') {
       // slow orbit over Miami behind the title menu
       const t = performance.now() / 1000;
@@ -569,6 +579,8 @@ export class Game {
     }
     this.updatePickups(dt);
     if (this.missions) this.missions.update(dt);
+    if (this.servicesReady) this.services.update(dt);
+    this.achievements.update(dt);
     // waypoint GPS
     if (this.waypoint) {
       this.routeT -= dt;
@@ -589,6 +601,7 @@ export class Game {
     for (const p of this.police.foot) out.push({ x: p.pos.x, z: p.pos.z, color: '#2a6cff', small: true });
     if (this.missions) out.push(...this.missions.blips());
     if (this.waypoint) out.push({ x: this.waypoint.x, z: this.waypoint.z, color: '#ff2fb0' });
+    if (this.servicesReady) for (const s of this.services.shops) out.push({ x: s.x, z: s.z, color: { gun: '#ff9a1f', repair: '#9aff5a', rental: '#c77dff' }[s.type], small: true });
     return out;
   }
 }

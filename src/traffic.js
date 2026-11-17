@@ -70,7 +70,8 @@ export class Traffic {
           const d = Math.hypot(_pt.x - P.x, _pt.z - P.z);
           if (d < 90 || d > 220) continue;
           if (this.cars.some((c) => Math.hypot(c.pos.x - _pt.x, c.pos.z - _pt.z) < 14)) continue;
-          this.spawn(this.pickModel(), lane);
+          const cop = Math.random() < 0.07;
+          this.spawn(cop ? 'car_police_poor' : this.pickModel(), lane, { driver: cop ? 'cop' : 'npc' });
           break;
         }
       }

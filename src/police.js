@@ -148,13 +148,22 @@ export class Police {
     // evading
     const near = [...this.cars, ...this.foot].some((c) => Math.hypot(c.pos.x - P.x, c.pos.z - P.z) < 70);
     this.unseen = near ? 0 : this.unseen + dt;
-    if (this.unseen > 6 + this.level * 3) {
+    if (this.unseen > 18 + this.level * 6) {
       this.heat = Math.max(0, this.level - 1 + 0.5) - 0.5;
       this.level = Math.max(0, this.level - 1);
       this.heat = this.level;
       this.unseen = 0;
       g.hud.notify(this.level ? '通缉等级下降' : '你已摆脱警察！', 2);
       if (!this.level) { this.clear(); return; }
+    }
+    // patrol cars already in traffic join the chase
+    for (const v of [...g.traffic.cars]) {
+      if (v.driver !== 'cop' || Math.hypot(v.pos.x - P.x, v.pos.z - P.z) > 90) continue;
+      g.traffic.detach(v);
+      v.cop = new Pursuit(g, v);
+      v.crew = 1;
+      g.parked.add(v);
+      this.cars.push(v);
     }
     // reinforcements
     this.spawnT -= dt;

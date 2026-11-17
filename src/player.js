@@ -12,6 +12,13 @@ export const WEAPONS = {
   sniper: { name: '狙击步枪', dmg: 150, rate: 1.1, clip: 5, ammo: 20, model: 'gun_sniper', snd: 'sfx_sniper_shoot', reload: 'sfx_sniper_reload', aim: 'rifle', spread: 0, scope: true },
   rpg: { name: '火箭筒', dmg: 300, rate: 1.5, clip: 1, ammo: 6, model: 'gun_rpg', snd: 'sfx_rpg_shoot', reload: 'sfx_rpg_reload', aim: 'rifle', explosive: true },
 };
+/** original seated animation for each vehicle family */
+export function seatClip(v) {
+  if (v.type === 'bike') return v.model.includes('harley') ? 'bo__player__bike_harley_idle' : v.model.includes('dirt') ? 'bo__player__bike_dirt_idle' : 'bo__player__bike_idle';
+  if (v.type === 'boat') return 'fl__player__boat_seated_idle';
+  return v.height > 1.9 ? 'fl__player__car_seated_idle_hi' : 'fl__player__car_seated_idle_low';
+}
+
 export const WEAPON_ORDER = ['fist', 'bat', 'beretta', 'uzi', 'ak47', 'sniper', 'rpg'];
 
 const _v = new THREE.Vector3(), _d = new THREE.Vector3(), _o = new THREE.Vector3();
@@ -117,9 +124,10 @@ export class Player {
     this.vehicle = v;
     g.audio.play('sfx_car_door_open', { vol: 0.7 });
     setTimeout(() => g.audio.play('sfx_car_door_close', { vol: 0.7 }), 450);
-    this.seat(v);
     this.c.overlay(null);
-    this.c.play(v.height > 1.9 ? 'fl__player__car_seated_idle_hi' : 'fl__player__car_seated_idle_low');
+    this.c.play(seatClip(v), { fade: 0 });
+    this.c.update(0);
+    this.seat(v);
     this.showWeapon();
     if (!/npc_|boat|heli/.test(v.def.engine)) g.audio.play(`sfx_${v.def.engine}_startup`, { vol: 0.6 });
     else if (v.type === 'heli') g.audio.play('sfx_helicopter_start', { vol: 0.6 });
@@ -128,17 +136,22 @@ export class Player {
     g.hud.notify(v.def.name, 1.5);
   }
 
+  /** Put the character on the vehicle's original seat node, pelvis aligned to the seat. */
   seat(v) {
     const seat = v.mesh.getObjectByName('player_sitting_position_00');
     v.root.add(this.root);
-    if (seat) {
-      v.mesh.updateMatrixWorld(true);
-      seat.getWorldPosition(_v);
-      v.root.worldToLocal(_v);
-      this.root.position.set(_v.x, _v.y - 0.58, _v.z - 0.12);
-    } else this.root.position.set(0.35, 0.05, -0.1);
     this.root.rotation.set(0, 0, 0);
+    this.root.position.set(0, 0, 0);
     this.pos = this.root.position;
+    if (!seat) { this.root.position.set(0.35, 0.05, -0.1); return; }
+    v.root.updateMatrixWorld(true);
+    seat.getWorldPosition(_v);
+    v.root.worldToLocal(_v);
+    const pelvis = this.c.getNode('Bip01_Pelvis') || this.c.getNode('Bip01');
+    this.root.updateMatrixWorld(true);
+    pelvis.getWorldPosition(_o);
+    this.root.worldToLocal(_o);
+    this.root.position.set(_v.x - _o.x, _v.y - _o.y + 0.08, _v.z - _o.z);
   }
 
   exit() {

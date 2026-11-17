@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { json, binary, view, texture } from './assets.js';
 
 export const nightUniform = { value: 0 };
+/** additive lamp/neon glow batches: faded in at night */
+export const glowMaterials = [];
 
 function nightTextureFor(name) {
   const m = /^(alpha_)?atlas(\d+)\.webp$/.exec(name || '');
@@ -11,10 +13,12 @@ function nightTextureFor(name) {
 function cityMaterial(b) {
   const map = texture(b.texture);
   if (b.blend) {
-    return new THREE.MeshBasicMaterial({
+    const m = new THREE.MeshBasicMaterial({
       map, vertexColors: true, transparent: true, depthWrite: false,
       blending: THREE.AdditiveBlending, fog: true, toneMapped: true,
     });
+    glowMaterials.push(m);
+    return m;
   }
   const night = nightTextureFor(b.texture);
   const m = new THREE.MeshStandardMaterial({

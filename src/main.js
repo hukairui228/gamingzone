@@ -518,7 +518,7 @@ function titleCamera(rdt) {
   G.time += rdt;
   G.vehicles.update(rdt);
   G.traffic.update(rdt);
-  G.hour = 12.5 + Math.sin(titleT * 0.3) * 1.5;
+  G.hour = 10.5 + Math.sin(titleT * 0.25) * 1.0;
   if (G.audio.ok && G.audio.station === 0) G.audio.station = 1;
 }
 

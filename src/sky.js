@@ -25,7 +25,7 @@ export class Atmosphere {
     scene.add(this.sky);
     const u = this.sky.material.uniforms;
     // clear tropical sky: low turbidity, moderate rayleigh for deep blue
-    u.turbidity.value = 3; u.rayleigh.value = 1.5; u.mieCoefficient.value = 0.003; u.mieDirectionalG.value = 0.8;
+    u.turbidity.value = 2; u.rayleigh.value = 2.0; u.mieCoefficient.value = 0.002; u.mieDirectionalG.value = 0.8;
 
     // separate sky for env map generation
     this.envSky = new Sky(); this.envSky.scale.setScalar(900);
@@ -123,9 +123,9 @@ export class Atmosphere {
     const u = this.sky.material.uniforms;
     u.sunPosition.value.copy(this.sunDir);
     // clear sky during day, slightly hazier at sunset
-    u.rayleigh.value = lerp(1.2, 2.5, 1 - sunUp) * (1 - this.rain * 0.4);
-    u.turbidity.value = lerp(2, 6, low * (1 - this.night)) + this.rain * 10;
-    u.mieCoefficient.value = lerp(0.002, 0.008, low * (1 - this.night));
+    u.rayleigh.value = lerp(2.0, 3.0, 1 - sunUp) * (1 - this.rain * 0.4);
+    u.turbidity.value = lerp(1.5, 5, low * (1 - this.night)) + this.rain * 10;
+    u.mieCoefficient.value = lerp(0.001, 0.006, low * (1 - this.night));
     const ue = this.envSky.material.uniforms;
     ue.sunPosition.value.copy(this.sunDir); ue.rayleigh.value = u.rayleigh.value; ue.turbidity.value = u.turbidity.value;
     ue.mieCoefficient.value = u.mieCoefficient.value; ue.mieDirectionalG.value = u.mieDirectionalG.value;
@@ -152,7 +152,7 @@ export class Atmosphere {
 
     // fog: light blue haze during day, warm at sunset, dark at night
     const fc = this.scene.fog.color;
-    _dayFog.setRGB(0.78, 0.88, 0.96);
+    _dayFog.setRGB(0.68, 0.82, 0.95);
     _duskFog.setRGB(0.95, 0.65, 0.45);
     _nightFog.setRGB(0.06, 0.05, 0.12);
     fc.copy(_dayFog).lerp(_duskFog, low * (1 - this.night)).lerp(_nightFog, this.night);

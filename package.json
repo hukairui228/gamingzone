@@ -1,0 +1,20 @@
+{
+  "name": "neon-harbor",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "霓虹港湾：街头之王 — an original open-world crime action game for the browser (Three.js)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --mode single",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "vite": "6.0.7",
+    "vite-plugin-singlefile": "2.1.0"
+  }
+}

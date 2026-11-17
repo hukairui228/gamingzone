@@ -15,9 +15,10 @@ export const WEAPONS = {
   rocket: { name: '火箭筒', dmg: 0, rate: 1.4, mag: 1, projectile: 'rocket', range: 300, price: 12000, ammoPrice: 800, ammoPack: 4, icon: '🚀' },
   grenade: { name: '手雷', dmg: 0, rate: 0.9, mag: 1, projectile: 'grenade', price: 1200, ammoPrice: 300, ammoPack: 5, icon: '💣' },
   molotov: { name: '燃烧瓶', dmg: 0, rate: 1.0, mag: 1, projectile: 'molotov', price: 600, ammoPrice: 150, ammoPack: 5, icon: '🔥' },
+  sniper: { name: '狙击枪', dmg: 120, rate: 1.5, spread: 0.002, mag: 5, range: 500, price: 8000, ammoPrice: 400, ammoPack: 15, icon: '🎯', scope: true },
   flamethrower: { name: '喷火器', dmg: 8, rate: 0.04, spread: 0.08, mag: 100, auto: true, range: 16, price: 8000, ammoPrice: 500, ammoPack: 100, icon: '🔥' },
 };
-export const WEAPON_ORDER = ['fist', 'bat', 'pistol', 'smg', 'shotgun', 'rifle', 'rocket', 'grenade', 'molotov', 'flamethrower'];
+export const WEAPON_ORDER = ['fist', 'bat', 'pistol', 'smg', 'shotgun', 'rifle', 'sniper', 'rocket', 'grenade', 'molotov', 'flamethrower'];
 
 const _d = new THREE.Vector3();
 

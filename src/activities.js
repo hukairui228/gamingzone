@@ -27,6 +27,8 @@ export class Activities {
   constructor() {
     this.markers = {};
     this.taxi = null;
+    this.ambulance = null;
+    this.delivery = null;
     this.race = null;
     this.drift = null;
     this.shopOpen = false;
@@ -49,11 +51,13 @@ export class Activities {
     RACES.forEach((r) => out.push({ x: r.start.x, z: r.start.z, ch: '🏁', col: '#2ef2ff', label: r.name }));
     out.push({ x: this.driftMarker.x, z: this.driftMarker.z, ch: 'D', col: '#b44dff', label: '漂移挑战' });
     if (this.taxi && this.taxi.target) out.push({ x: this.taxi.target.x, z: this.taxi.target.z, ch: '●', col: '#ffd166', edge: true, mission: true });
+    if (this.ambulance && this.ambulance.target) out.push({ x: this.ambulance.target.x, z: this.ambulance.target.z, ch: '●', col: '#ff3355', edge: true, mission: true });
+    if (this.delivery && this.delivery.target) out.push({ x: this.delivery.target.x, z: this.delivery.target.z, ch: '●', col: '#ffb02e', edge: true, mission: true });
     if (this.race && this.race.cps[this.race.idx]) { const c = this.race.cps[this.race.idx]; out.push({ x: c[0], z: c[1], ch: '●', col: '#2ef2ff', edge: true, mission: true }); }
     return out;
   }
 
-  busy() { return !!(this.taxi || this.race || this.drift) || (G.missions && G.missions.active); }
+  busy() { return !!(this.taxi || this.ambulance || this.delivery || this.race || this.drift) || (G.missions && G.missions.active); }
 
   update(dt) {
     const pl = G.player;
@@ -90,8 +94,18 @@ export class Activities {
         G.hud.prompt(G.input.touchMode ? '' : '按 <kbd>T</kbd> 开始出租车载客', 0.3);
         if (G.input.pressed('taxi')) this.startTaxi();
       }
+      if (pl.inVehicle && pl.inVehicle.typeKey === 'ambulance') {
+        G.hud.prompt(G.input.touchMode ? '' : '按 <kbd>T</kbd> 开始救护车任务', 0.3);
+        if (G.input.pressed('taxi')) this.startAmbulance();
+      }
+      if (pl.inVehicle && pl.inVehicle.typeKey === 'van') {
+        G.hud.prompt(G.input.touchMode ? '' : '按 <kbd>T</kbd> 开始外卖配送', 0.3);
+        if (G.input.pressed('taxi')) this.startDelivery();
+      }
     }
     if (this.taxi) this.updateTaxi(dt);
+    if (this.ambulance) this.updateAmbulance(dt);
+    if (this.delivery) this.updateDelivery(dt);
     if (this.race) this.updateRace(dt);
     if (this.drift) this.updateDrift(dt);
   }
@@ -220,6 +234,10 @@ export class Activities {
     for (const d of spawns) {
       G.vehicles.spawn(d.type, d.x, d.z, d.h, undefined, { persistent: true });
     }
+    const hosp = G.world.markers.hospital;
+    if (hosp) G.vehicles.spawn('ambulance', hosp.x + 12, hosp.z, Math.PI, undefined, { persistent: true });
+    G.vehicles.spawn('van', 4 * P, 6 * P + 5, 0, undefined, { persistent: true });
+    G.vehicles.spawn('van', 7 * P + 10, 2 * P, Math.PI / 2, undefined, { persistent: true });
   }
 
   // ---------------- taxi ----------------
@@ -282,6 +300,127 @@ export class Activities {
     if (T.marker) T.marker.dispose();
     if (T.ped && !T.ped.removed && T.state === 'pickup') { T.ped.state = 'walk'; T.ped.mission = null; }
     this.taxi = null;
+    G.hud.timer(null); G.hud.objective('');
+    if (msg) G.hud.notify(msg);
+  }
+
+  // ---------------- ambulance ----------------
+  startAmbulance() {
+    this.ambulance = { streak: 0, state: 'find', timer: 0 };
+    G.hud.notify('🚑 救护车任务开始！前往红色光柱处接患者。');
+    this.nextPatient();
+  }
+  nextPatient() {
+    const A = this.ambulance, pl = G.player;
+    const a = Math.random() * Math.PI * 2, r = rand(100, 220);
+    let x = clamp(pl.x + Math.cos(a) * r, 10, NX * P - 10);
+    let z = clamp(pl.z + Math.sin(a) * r, 10, NZ * P - 10);
+    const lp = nearestLanePoint(x, z);
+    x = lp.x; z = lp.z;
+    A.state = 'pickup'; A.target = { x, z }; A.timer = 50;
+    A.marker = new Marker(x, z, 0xff3355, 3, 14);
+    A.ped = G.pedSys.spawn('civ', x + 3, z, 0);
+    A.ped.state = 'stand'; A.ped.mission = { blip: false };
+    G.hud.objective('接上患者');
+  }
+  updateAmbulance(dt) {
+    const A = this.ambulance, pl = G.player, v = pl.inVehicle;
+    if (A.marker) A.marker.update(dt);
+    if (!v || v.dead) { this.endAmbulance('你离开了救护车，任务结束。'); return; }
+    A.timer -= dt;
+    G.hud.timer(A.timer);
+    if (A.timer <= 0) { this.endAmbulance('超时了！患者情况危急。'); return; }
+    if (A.state === 'pickup') {
+      if (A.ped.char.dead) { this.endAmbulance('患者……没了。'); return; }
+      if (A.marker.inside(v.x, v.z, 1.5) && v.speed < 2) {
+        A.ped.dispose(); G.pedSys.list.splice(G.pedSys.list.indexOf(A.ped), 1);
+        A.marker.dispose();
+        const h = G.world.markers.hospital;
+        A.target = { x: h.x, z: h.z };
+        A.marker = new Marker(h.x, h.z, 0xff3355, 3, 14);
+        A.state = 'drop';
+        A.distance = dist(h.x, h.z, v.x, v.z);
+        A.timer = 25 + A.distance / 10;
+        G.audio.ui('checkpoint');
+        G.hud.subtitle(pick(['<b>患者</b>：啊……好痛……', '<b>患者</b>：快……快送我去医院！', '<b>患者</b>：我是不是要死了？', '<b>患者</b>：别开太快，我怕颠！']), 3);
+        G.hud.objective('把患者送到医院');
+      }
+    } else if (A.state === 'drop') {
+      if (A.marker.inside(v.x, v.z, 1.5) && v.speed < 2) {
+        A.streak++;
+        const fare = Math.floor(A.distance * 0.8 + A.timer * 8) + A.streak * 80;
+        G.addMoney(fare);
+        G.save.stats.ambulanceTrips = (G.save.stats.ambulanceTrips || 0) + 1;
+        G.hud.big(`救治费 ${fmtMoney(fare)}`, 'green', `连续救治 ${A.streak}`, 2);
+        A.marker.dispose();
+        this.nextPatient();
+      }
+    }
+  }
+  endAmbulance(msg) {
+    const A = this.ambulance;
+    if (A.marker) A.marker.dispose();
+    if (A.ped && !A.ped.removed && A.state === 'pickup') { A.ped.state = 'walk'; A.ped.mission = null; }
+    this.ambulance = null;
+    G.hud.timer(null); G.hud.objective('');
+    if (msg) G.hud.notify(msg);
+  }
+
+  // ---------------- food delivery ----------------
+  startDelivery() {
+    this.delivery = { streak: 0, state: 'pickup' };
+    G.hud.notify('🍔 外卖配送开始！先去餐厅取餐。');
+    this.nextDeliveryPickup();
+  }
+  nextDeliveryPickup() {
+    const D = this.delivery, pl = G.player;
+    const a = Math.random() * Math.PI * 2, r = rand(80, 180);
+    let x = clamp(pl.x + Math.cos(a) * r, 10, NX * P - 10);
+    let z = clamp(pl.z + Math.sin(a) * r, 10, NZ * P - 10);
+    const lp = nearestLanePoint(x, z);
+    x = lp.x; z = lp.z;
+    D.state = 'pickup'; D.target = { x, z }; D.timer = 45;
+    D.marker = new Marker(x, z, 0xffb02e, 3, 14);
+    G.hud.objective('去餐厅取餐');
+  }
+  updateDelivery(dt) {
+    const D = this.delivery, pl = G.player, v = pl.inVehicle;
+    if (D.marker) D.marker.update(dt);
+    if (!v || v.dead) { this.endDelivery('你离开了车辆，配送结束。'); return; }
+    D.timer -= dt;
+    G.hud.timer(D.timer);
+    if (D.timer <= 0) { this.endDelivery('超时了！食物凉了。'); return; }
+    if (D.state === 'pickup') {
+      if (D.marker.inside(v.x, v.z, 1.5) && v.speed < 2) {
+        D.marker.dispose();
+        G.audio.ui('checkpoint');
+        G.hud.subtitle(pick(['<b>店员</b>：外卖好了，快送去吧！', '<b>店员</b>：别让客人等太久哦。', '<b>店员</b>：小心别把汤洒了！']), 3);
+        let x, z, tries = 0;
+        do { x = rand(10, NX * P - 10); z = rand(10, NZ * P - 10); tries++; } while (dist(x, z, v.x, v.z) < 200 && tries < 30);
+        const lp = nearestLanePoint(x, z);
+        D.target = { x: lp.x, z: lp.z };
+        D.marker = new Marker(lp.x, lp.z, 0xffb02e, 3, 14);
+        D.state = 'drop';
+        D.distance = dist(lp.x, lp.z, v.x, v.z);
+        D.timer = 20 + D.distance / 12;
+        G.hud.objective('送餐到目的地');
+      }
+    } else if (D.state === 'drop') {
+      if (D.marker.inside(v.x, v.z, 1.5) && v.speed < 2) {
+        D.streak++;
+        const fare = Math.floor(D.distance * 0.5 + D.timer * 5) + D.streak * 60;
+        G.addMoney(fare);
+        G.save.stats.deliveryTrips = (G.save.stats.deliveryTrips || 0) + 1;
+        G.hud.big(`配送费 ${fmtMoney(fare)}`, 'gold', `连续配送 ${D.streak}`, 2);
+        D.marker.dispose();
+        this.nextDeliveryPickup();
+      }
+    }
+  }
+  endDelivery(msg) {
+    const D = this.delivery;
+    if (D.marker) D.marker.dispose();
+    this.delivery = null;
     G.hud.timer(null); G.hud.objective('');
     if (msg) G.hud.notify(msg);
   }
@@ -391,6 +530,8 @@ export class Activities {
 
   cancelAll() {
     if (this.taxi) this.endTaxi();
+    if (this.ambulance) this.endAmbulance();
+    if (this.delivery) this.endDelivery();
     if (this.race) this.endRace(false, '');
     if (this.drift) { this.driftOff && this.driftOff(); this.drift = null; G.hud.timer(null); G.hud.objective(''); }
   }

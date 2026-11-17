@@ -1,7 +1,7 @@
 // World markers (light beams) and pickups (money, weapons, health, armor, neon badges).
 import * as THREE from 'three';
 import { G } from './state.js';
-import { groundHeight } from './layout.js';
+import { groundHeight, P, NX, NZ } from './layout.js';
 import { weaponMesh } from './character.js';
 import { WEAPONS } from './weapons.js';
 import { rand, fmtMoney } from './util.js';
@@ -53,6 +53,8 @@ const badgeMat = new THREE.MeshStandardMaterial({ color: 0x220011, emissive: 0xf
 const healthMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2244, emissiveIntensity: 2.4 });
 const armorMat = new THREE.MeshStandardMaterial({ color: 0x000a22, emissive: 0x2e7dff, emissiveIntensity: 2.4 });
 const cashMat = new THREE.MeshStandardMaterial({ color: 0x0a2a10, emissive: 0x3dff7a, emissiveIntensity: 1.8 });
+const surfMat = new THREE.MeshStandardMaterial({ color: 0x002233, emissive: 0x2ef2ff, emissiveIntensity: 2.5, metalness: 0.3, roughness: 0.5 });
+const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1a0a2a, emissive: 0xb44dff, emissiveIntensity: 2.5, metalness: 0.7, roughness: 0.3 });
 
 export class Pickups {
   constructor() {
@@ -62,12 +64,40 @@ export class Pickups {
   init() {
     for (const s of G.world.badgeSpots) if (!G.save.badges.includes(s.id)) this.add('badge', s.x, s.z, { id: s.id, y: s.y });
     for (const s of G.world.pickupSpots) this.add(s.type, s.x, s.z, { respawn: 60, spot: s });
+    this.spawnCollectibles();
+  }
+  spawnCollectibles() {
+    const collected = (list, id) => (list || []).includes(id);
+    const surfSpots = [
+      { x: 0.5*P, z: 2*P }, { x: 3*P, z: 0.5*P }, { x: 7*P, z: 1*P },
+      { x: 9*P, z: 3*P }, { x: 1*P, z: 5*P }, { x: 5*P, z: 6*P },
+      { x: 8*P, z: 7*P }, { x: 2*P, z: 9*P }, { x: 6*P, z: 10*P },
+      { x: 4*P, z: 11*P }, { x: NX*P+40, z: 2*P }, { x: NX*P+50, z: 5*P },
+      { x: NX*P+40, z: 8*P }, { x: 0*P-20, z: 4*P }, { x: 0*P-20, z: 9*P },
+    ];
+    const wheelSpots = [
+      { x: 1*P, z: 1*P }, { x: 4*P, z: 2*P }, { x: 8*P, z: 0.5*P },
+      { x: 2*P, z: 4*P }, { x: 6*P, z: 3*P }, { x: 9*P, z: 5*P },
+      { x: 0.5*P, z: 7*P }, { x: 3*P, z: 8*P }, { x: 7*P, z: 9*P },
+      { x: 5*P, z: 10*P }, { x: 1*P, z: 11*P }, { x: 8*P, z: 11*P },
+      { x: 4*P, z: 4*P }, { x: 6*P, z: 7*P }, { x: 2*P, z: 1.5*P },
+    ];
+    for (let i = 0; i < surfSpots.length; i++) {
+      const s = surfSpots[i], id = `surf_${i}`;
+      if (!collected(G.save.surfboards, id)) this.add('surfboard', s.x, s.z, { id });
+    }
+    for (let i = 0; i < wheelSpots.length; i++) {
+      const s = wheelSpots[i], id = `wheel_${i}`;
+      if (!collected(G.save.wheels, id)) this.add('wheel', s.x, s.z, { id });
+    }
   }
   add(type, x, z, o = {}) {
     let mesh;
     if (type === 'badge') mesh = new THREE.Mesh(badgeGeo, badgeMat);
     else if (type === 'health') { mesh = new THREE.Group(); const a = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.18, 0.18), healthMat); const b = a.clone(); b.rotation.z = Math.PI / 2; mesh.add(a, b); }
     else if (type === 'armor') mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.25, 0.45, 8), armorMat);
+    else if (type === 'surfboard') { mesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.6, 2), surfMat); mesh.rotation.x = 0.3; }
+    else if (type === 'wheel') mesh = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.12, 8, 16), wheelMat);
     else if (type === 'cash') mesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.2), cashMat);
     else if (type === 'briefcase') mesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.12), new THREE.MeshStandardMaterial({ color: 0x3a2a1a, emissive: 0xffaa33, emissiveIntensity: 0.6 }));
     else { mesh = weaponMesh(type) || new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), cashMat); mesh.scale.setScalar(1.5); }
@@ -129,6 +159,24 @@ export class Pickups {
         G.hud.notify(`💎 霓虹徽章 ${G.save.badges.length} / 25`);
         if (G.save.badges.length === 25) { G.hud.big('全部徽章收集完成！', 'gold', '奖励：防弹衣无限补给 + $25,000', 5); G.addMoney(25000); }
         else if (G.save.badges.length % 5 === 0) { G.hud.notify('🎁 每收集 5 枚徽章，枪械店给你打折 10%'); }
+        G.persist();
+        return true;
+      case 'surfboard':
+        if (!G.save.surfboards) G.save.surfboards = [];
+        G.save.surfboards.push(it.id);
+        G.audio.ui('badge');
+        G.addMoney(500);
+        G.hud.notify(`🏄 冲浪板 ${G.save.surfboards.length} / 15`);
+        if (G.save.surfboards.length === 15) { G.hud.big('冲浪板全部收集！', 'gold', '解锁高速快艇「海浪骑士」', 5); G.addMoney(15000); }
+        G.persist();
+        return true;
+      case 'wheel':
+        if (!G.save.wheels) G.save.wheels = [];
+        G.save.wheels.push(it.id);
+        G.audio.ui('badge');
+        G.addMoney(500);
+        G.hud.notify(`🛞 特殊轮毂 ${G.save.wheels.length} / 15`);
+        if (G.save.wheels.length === 15) { G.hud.big('轮毂全部收集！', 'gold', '解锁特殊改装「闪电涂装」', 5); G.addMoney(15000); }
         G.persist();
         return true;
       case 'briefcase': G.events.emit('briefcase'); break;

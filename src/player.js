@@ -330,6 +330,8 @@ export class Player {
     c.vx = damp(c.vx || 0, tvx, accel, dt);
     c.vz = damp(c.vz || 0, tvz, accel, dt);
     c.x += c.vx * dt; c.z += c.vz * dt;
+    const footSpeed = Math.hypot(c.vx, c.vz);
+    if (footSpeed > 0.5) G.save.stats.distanceFoot = (G.save.stats.distanceFoot || 0) + footSpeed * dt;
     // facing
     if (c.aim || (G.time - this.lastShot < 0.6)) c.h = dampAngle(c.h, this.camYaw, 18, dt);
     else if (ml > 0.1) c.h = dampAngle(c.h, Math.atan2(wx, wz), 10, dt);
@@ -498,6 +500,9 @@ export class Player {
     const v = this.inVehicle;
     if (v) fov += clamp(v.speed / v.t.top, 0, 1.2) * 12 + (v.nitroOn ? 8 : 0);
     if (this.char.aim) fov -= 15;
+    const isSniper = this.char.aim && WEAPONS[this.weapon] && WEAPONS[this.weapon].scope;
+    if (isSniper) fov -= 25;
+    if (G.hud && G.hud.scopeOverlay) G.hud.scopeOverlay(isSniper);
     const cam = G.camera;
     const nf = damp(cam.fov, fov, 5, rdt);
     if (Math.abs(nf - cam.fov) > 0.01) { cam.fov = nf; cam.updateProjectionMatrix(); }
@@ -542,6 +547,10 @@ export class Player {
     }
     if (v.sinking > 1.2 && this.inVehicle) { this.exitVehicle(true); this.rescueFromWater(); }
     G.save.stats.distance += v.speed * dt;
+    if (v.t.boat) G.save.stats.distanceWater = (G.save.stats.distanceWater || 0) + v.speed * dt;
+    else G.save.stats.distanceCar = (G.save.stats.distanceCar || 0) + v.speed * dt;
+    if (!G.save.stats.vehiclesDriven) G.save.stats.vehiclesDriven = {};
+    G.save.stats.vehiclesDriven[v.typeKey] = true;
   }
 
   tireEffects(v, dt) {

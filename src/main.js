@@ -17,6 +17,7 @@ import { Pickups } from './pickups.js';
 import { Activities } from './activities.js';
 import { Missions } from './missions.js';
 import { Territories } from './territories.js';
+import { Achievements } from './achievements.js';
 import { HUD } from './hud.js';
 import { clamp, lerp, fmtMoney } from './util.js';
 import { shared } from './materials.js';
@@ -39,6 +40,7 @@ G.persist = () => {
 };
 G.addMoney = (n, quiet) => {
   G.save.money += n;
+  if (n > 0) G.save.stats.totalEarned = (G.save.stats.totalEarned || 0) + n;
   if (!quiet && n > 0) G.audio.ui('cash');
   else if (quiet) G.audio.ui('pickup');
 };
@@ -178,6 +180,7 @@ function startGame(fresh) {
   G.pickups.items.length || G.pickups.init();
   G.activities.markers.gunshop || G.activities.init();
   G.territories.init();
+  if (!G.achievements) G.achievements = new Achievements();
   G.hud.weapon();
   G.hud.stars(0);
   if (fresh) {
@@ -251,8 +254,13 @@ function wireEvents() {
   G.events.on('actorKilled', (p, attacker) => {
     if (attacker === G.player) {
       G.save.stats.kills++;
+      if (p.team === 'civ') G.save.stats.civKills = (G.save.stats.civKills || 0) + 1;
+      if (p.team === 'cop') G.save.stats.copsKilled = (G.save.stats.copsKilled || 0) + 1;
       G.player.focus = Math.min(1, G.player.focus + 0.12);
     }
+  });
+  G.events.on('vehicleDestroyed', (v, by) => {
+    if (by === 'player' || by === G.player) G.save.stats.carsDestroyed = (G.save.stats.carsDestroyed || 0) + 1;
   });
   G.events.on('vehicleCrash', (v, imp) => { if (v.driver === 'player') { G.player.bankDrift(true); G.fx.shake = Math.max(G.fx.shake, Math.min(0.6, imp / 30)); } });
   G.events.on('carCollision', (a, b, imp) => { if (a.driver === 'player' || b.driver === 'player') { G.player.bankDrift(true); G.fx.shake = Math.max(G.fx.shake, Math.min(0.6, imp / 30)); } });
@@ -358,7 +366,18 @@ function wirePhone() {
       }
       detail.innerHTML = h;
     } else if (act === 'stats') {
-      detail.innerHTML = G.hud.statsHTML();
+      detail.innerHTML = G.achievements ? G.achievements.statsHTML() : G.hud.statsHTML();
+    } else if (act === 'achievements') {
+      detail.innerHTML = G.achievements ? G.achievements.achievementsHTML() : '<p>成就系统加载中…</p>';
+    } else if (act === 'collectibles') {
+      const sb = (G.save.surfboards || []).length, wh = (G.save.wheels || []).length;
+      let h = '<h3 style="color:var(--cyan);margin:0 0 8px">收藏品</h3>';
+      h += `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1)"><span>🏄 冲浪板</span> <b style="color:#2ef2ff">${sb} / 15</b></div>`;
+      h += `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1)"><span>🛞 特殊轮毂</span> <b style="color:#b44dff">${wh} / 15</b></div>`;
+      h += `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1)"><span>💎 霓虹徽章</span> <b style="color:#ff3fa4">${G.save.badges.length} / 25</b></div>`;
+      if (sb >= 15) h += '<p style="color:#3dff7a;margin-top:8px">冲浪板全部收集！高速快艇已解锁！</p>';
+      if (wh >= 15) h += '<p style="color:#3dff7a">轮毂全部收集！闪电涂装已解锁！</p>';
+      detail.innerHTML = h;
     } else if (act === 'territory') {
       let h = '<h3 style="color:var(--gold);margin:0 0 8px">地盘势力</h3>';
       if (G.territories) {
@@ -479,6 +498,7 @@ function simStep(dt, rdt) {
   G.activities.update(dt);
   G.missions.update(dt);
   G.territories.update(dt);
+  if (G.achievements) G.achievements.update(dt);
   G.fx.update(dt);
   if (G.bustAnim > 0) { G.bustAnim -= rdt; pl.char.animate(rdt, 0, { handsUp: true }); }
   G.hud.update(rdt);

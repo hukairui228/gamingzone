@@ -329,6 +329,19 @@ export class HUD {
     this.big(title, 'gold', `距离 ${dist.toFixed(0)}m · 高度 ${h.toFixed(1)}m · 滞空 ${t.toFixed(1)}s · +${fmtMoney(cash)}`, 3);
     G.audio && G.audio.ui('cash');
   }
+  achievementPopup(icon, name, desc) {
+    const el = $('achievpop');
+    if (!el) return;
+    el.innerHTML = `<span class="a-icon">${icon}</span><div class="a-info"><div class="label">成就解锁</div><b>${name}</b><div class="desc">${desc}</div></div>`;
+    el.classList.add('show');
+    clearTimeout(this._achievT);
+    this._achievT = setTimeout(() => el.classList.remove('show'), 3800);
+  }
+  scopeOverlay(on) {
+    let el = $('scopeoverlay');
+    if (!el) return;
+    el.classList.toggle('show', on);
+  }
   showHUD(on) { $('hud').classList.toggle('hidden', !on); $('touch').classList.toggle('hidden', !on || !G.input.touchMode); }
 
   // ---------- panels ----------

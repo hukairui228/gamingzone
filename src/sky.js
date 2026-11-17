@@ -16,7 +16,7 @@ export class Atmosphere {
     this.scene = scene; this.renderer = renderer;
     this.sky = new Sky();
     this.sky.scale.setScalar(9000);
-    this.skyScale = { value: 0.42 };
+    this.skyScale = { value: 0.55 };
     const patchSky = (sky) => {
       sky.material.uniforms.uSkyScale = this.skyScale;
       sky.material.fragmentShader = 'uniform float uSkyScale;\n' + sky.material.fragmentShader.replace('gl_FragColor = vec4( retColor, 1.0 );', 'gl_FragColor = vec4( retColor * uSkyScale, 1.0 );');
@@ -24,7 +24,8 @@ export class Atmosphere {
     patchSky(this.sky);
     scene.add(this.sky);
     const u = this.sky.material.uniforms;
-    u.turbidity.value = 8; u.rayleigh.value = 2.0; u.mieCoefficient.value = 0.006; u.mieDirectionalG.value = 0.88;
+    // clear tropical sky: low turbidity, moderate rayleigh for deep blue
+    u.turbidity.value = 3; u.rayleigh.value = 1.5; u.mieCoefficient.value = 0.003; u.mieDirectionalG.value = 0.8;
 
     // separate sky for env map generation
     this.envSky = new Sky(); this.envSky.scale.setScalar(900);
@@ -34,7 +35,8 @@ export class Atmosphere {
     this.envRT = null;
     this.envTimer = 0;
 
-    this.sun = new THREE.DirectionalLight(0xffffff, 3);
+    // bright warm sunlight
+    this.sun = new THREE.DirectionalLight(0xfff8e8, 3.5);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(4096, 4096);
     const sc = this.sun.shadow.camera;
@@ -43,39 +45,29 @@ export class Atmosphere {
     this.sun.shadow.normalBias = 0.05;
     scene.add(this.sun, this.sun.target);
 
-    this.hemi = new THREE.HemisphereLight(0xc0dcff, 0x5a4535, 0.65);
+    // bright warm ambient
+    this.hemi = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.75);
     scene.add(this.hemi);
 
-    scene.fog = new THREE.FogExp2(0xffc9a0, 0.0012);
+    // light blue haze — Miami clear visibility
+    scene.fog = new THREE.FogExp2(0xc8e0f0, 0.0006);
 
-    // night dome: deep blue gradient with city-glow horizon and procedural twinkling stars
+    // night dome with stars
     this.nightU = { uNight: { value: 0 }, uTime: { value: 0 }, uRain: { value: 0 } };
     this.stars = new THREE.Mesh(new THREE.SphereGeometry(4200, 48, 24), new THREE.ShaderMaterial({
       uniforms: this.nightU, side: THREE.BackSide, transparent: true, depthWrite: false, fog: false,
       vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: `uniform float uNight, uTime, uRain; varying vec3 vDir;
         float h3(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-        float n2(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.-2.*f); return mix(mix(h3(vec3(i,0.)),h3(vec3(i+vec2(1,0),0.)),u.x), mix(h3(vec3(i+vec2(0,1),0.)),h3(vec3(i+vec2(1,1),0.)),u.x), u.y); }
         void main(){
           vec3 d = normalize(vDir);
           float h = clamp(d.y, -0.3, 1.0);
-          vec3 top = vec3(0.003, 0.006, 0.028), mid = vec3(0.015, 0.02, 0.08), hor = vec3(0.14, 0.05, 0.18);
-          vec3 col = mix(hor, mid, smoothstep(-0.02, 0.22, h));
-          col = mix(col, top, smoothstep(0.22, 0.85, h));
-          // Milky Way band: a broad faint glow across the sky
-          float mwAngle = abs(d.x * 0.6 + d.z * 0.8);
-          float mw = smoothstep(0.4, 0.0, mwAngle) * smoothstep(0.1, 0.4, h) * smoothstep(0.9, 0.5, h);
-          mw *= 0.6 + 0.4 * n2(d.xz * 60.0);
-          col += vec3(0.025, 0.02, 0.04) * mw;
-          // stars — two layers: bright and faint
-          vec3 p1 = d * 260.0; vec3 c1 = floor(p1); float r1 = h3(c1);
-          float s1 = step(0.991, r1) * smoothstep(0.4, 0.0, length(fract(p1) - 0.5)) * smoothstep(0.03, 0.25, h);
-          vec3 p2 = d * 520.0; vec3 c2 = floor(p2); float r2 = h3(c2);
-          float s2 = step(0.985, r2) * smoothstep(0.45, 0.0, length(fract(p2) - 0.5)) * smoothstep(0.05, 0.3, h) * 0.35;
-          float s = s1 + s2;
-          float twinkle = 0.5 + 0.5 * sin(uTime * (1.5 + r1 * 4.0) + r1 * 60.0);
-          vec3 starCol = mix(vec3(0.9, 0.92, 1.0), vec3(1.0, 0.85, 0.7), step(0.7, r1));
-          col += s * twinkle * starCol * (1.0 - uRain) * 2.5;
+          vec3 top = vec3(0.005, 0.01, 0.04), mid = vec3(0.02, 0.025, 0.08), hor = vec3(0.08, 0.04, 0.12);
+          vec3 col = mix(hor, mid, smoothstep(-0.02, 0.2, h));
+          col = mix(col, top, smoothstep(0.2, 0.8, h));
+          vec3 p = d * 260.0; vec3 c = floor(p); float r = h3(c);
+          float s = step(0.992, r) * smoothstep(0.38, 0.0, length(fract(p) - 0.5)) * smoothstep(0.03, 0.25, h);
+          col += s * (0.55 + 0.45 * sin(uTime * (2.0 + r * 3.0) + r * 60.0)) * (1.0 - uRain) * 2.0;
           col = mix(col, vec3(0.06, 0.06, 0.08), uRain * 0.7);
           gl_FragColor = vec4(col, uNight);
         }`,
@@ -92,8 +84,8 @@ export class Atmosphere {
     this.sunColor = new THREE.Color();
     this.night = 0;
 
-    // weather
-    this.rain = 0; this.rainTarget = 0; this.weatherTimer = 120;
+    // weather — less frequent rain for sunny Miami
+    this.rain = 0; this.rainTarget = 0; this.weatherTimer = 180;
     const RN = 5000, rp = new Float32Array(RN * 6);
     for (let k = 0; k < RN; k++) {
       const x = (Math.random() - 0.5) * 80, y = Math.random() * 40, z = (Math.random() - 0.5) * 80;
@@ -115,15 +107,12 @@ export class Atmosphere {
     const sc = this.sun.shadow.camera; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.updateProjectionMatrix();
   }
 
-  // hour: 0..24
   update(dt, hour, focus, camPos, audio) {
-    // sun path: rises 6, sets 19.5
-    const dayT = (hour - 6.0) / 13.0; // 0 sunrise → 1 sunset
-    const elev = Math.sin(clamp(dayT, -0.5, 1.5) * Math.PI) * 1.05 - 0.03; // radians-ish
+    const dayT = (hour - 6.0) / 13.0;
+    const elev = Math.sin(clamp(dayT, -0.5, 1.5) * Math.PI) * 1.05 - 0.03;
     const az = lerp(-1.9, 1.9, clamp(dayT, -0.2, 1.2));
     const el = clamp(elev, -0.6, 1.2);
     this.sunDir.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el) * 0.6 + 0.4).normalize();
-    // the sun sets over the ocean (east of the beach) for the signature skyline shot
 
     const sunUp = clamp(this.sunDir.y * 4 + 0.2, 0, 1);
     this.night = clamp(1 - (this.sunDir.y + 0.08) * 6, 0, 1);
@@ -133,44 +122,46 @@ export class Atmosphere {
 
     const u = this.sky.material.uniforms;
     u.sunPosition.value.copy(this.sunDir);
-    u.rayleigh.value = lerp(1.2, 3.2, 1 - sunUp) * (1 - this.rain * 0.5);
-    u.turbidity.value = lerp(4, 8, low * (1 - this.night)) + this.rain * 12;
-    u.mieCoefficient.value = lerp(0.005, 0.015, low * (1 - this.night));
+    // clear sky during day, slightly hazier at sunset
+    u.rayleigh.value = lerp(1.2, 2.5, 1 - sunUp) * (1 - this.rain * 0.4);
+    u.turbidity.value = lerp(2, 6, low * (1 - this.night)) + this.rain * 10;
+    u.mieCoefficient.value = lerp(0.002, 0.008, low * (1 - this.night));
     const ue = this.envSky.material.uniforms;
     ue.sunPosition.value.copy(this.sunDir); ue.rayleigh.value = u.rayleigh.value; ue.turbidity.value = u.turbidity.value;
     ue.mieCoefficient.value = u.mieCoefficient.value; ue.mieDirectionalG.value = u.mieDirectionalG.value;
 
-    // sun light — warmer golden hour, vivid Miami sunset
-    this.sunColor.setRGB(1, lerp(0.95, 0.52, low), lerp(0.88, 0.28, low));
+    // sun light — warm white during day, golden at sunset
+    this.sunColor.setRGB(1, lerp(0.97, 0.6, low), lerp(0.93, 0.35, low));
     if (this.sunDir.y > -0.05) {
       this.sun.position.copy(camPos).addScaledVector(this.sunDir, 400);
       this.sun.color.copy(this.sunColor);
-      this.sun.intensity = clamp(this.sunDir.y * 8, 0, 1) * 3.4 * (1 - this.rain * 0.6);
+      this.sun.intensity = clamp(this.sunDir.y * 8, 0, 1) * 3.8 * (1 - this.rain * 0.6);
     } else {
-      // moonlight
       _moonDir.set(-this.sunDir.x, Math.abs(this.sunDir.y) + 0.3, -this.sunDir.z).normalize();
       this.sun.position.copy(camPos).addScaledVector(_moonDir, 400);
       this.sun.color.setRGB(0.55, 0.65, 1.0);
-      this.sun.intensity = 0.35 * (1 - this.rain * 0.7);
+      this.sun.intensity = 0.4 * (1 - this.rain * 0.7);
     }
     this.sun.target.position.copy(camPos);
-    // snap shadow camera to texels to avoid shimmering
     this.sun.target.updateMatrixWorld();
 
-    // hemisphere light: warm dusk bounce from buildings
-    const duskTint = low * (1 - this.night);
-    this.hemi.intensity = lerp(0.32, 0.22, this.night) * (1 + this.rain * 0.6) * (1 + duskTint * 0.15);
-    this.hemi.color.setRGB(lerp(0.75, 0.35, this.night) + duskTint * 0.12, lerp(0.85, 0.42, this.night), lerp(1.0, 0.75, this.night));
-    this.hemi.groundColor.setRGB(lerp(0.4, 0.12, this.night) + duskTint * 0.08, lerp(0.33, 0.1, this.night), lerp(0.26, 0.16, this.night));
+    // hemisphere: bright blue sky + warm ground bounce
+    this.hemi.intensity = lerp(0.75, 0.25, this.night) * (1 - this.rain * 0.3);
+    this.hemi.color.setRGB(lerp(0.55, 0.2, this.night), lerp(0.75, 0.3, this.night), lerp(0.95, 0.5, this.night));
+    this.hemi.groundColor.setRGB(lerp(0.55, 0.12, this.night), lerp(0.45, 0.1, this.night), lerp(0.35, 0.16, this.night));
 
-    // fog color tracks horizon — rich Miami palette
+    // fog: light blue haze during day, warm at sunset, dark at night
     const fc = this.scene.fog.color;
-    _dayFog.setRGB(0.72, 0.84, 0.95); _duskFog.setRGB(1.0, 0.5, 0.3); _nightFog.setRGB(0.04, 0.03, 0.1);
+    _dayFog.setRGB(0.78, 0.88, 0.96);
+    _duskFog.setRGB(0.95, 0.65, 0.45);
+    _nightFog.setRGB(0.06, 0.05, 0.12);
     fc.copy(_dayFog).lerp(_duskFog, low * (1 - this.night)).lerp(_nightFog, this.night);
-    _rainFog.setRGB(0.35, 0.38, 0.42);
+    _rainFog.setRGB(0.5, 0.52, 0.55);
     fc.lerp(_rainFog, this.rain * 0.6 * (1 - this.night * 0.7));
-    this.scene.fog.density = 0.0011 + this.rain * 0.0035;
-    this.renderer.toneMappingExposure = lerp(0.88, 1.35, this.night) * (1 - this.rain * 0.15) * (1 + this.lightning * 2);
+    // Miami: clear visibility, light haze
+    this.scene.fog.density = 0.00035 + this.rain * 0.003 + this.night * 0.0003;
+    // brighter exposure overall
+    this.renderer.toneMappingExposure = lerp(1.25, 1.5, this.night) * (1 - this.rain * 0.12) * (1 + this.lightning * 2);
 
     this.nightU.uNight.value = Math.min(1, this.night * 1.15);
     this.nightU.uTime.value += dt;
@@ -189,15 +180,15 @@ export class Atmosphere {
       if (this.envRT) this.envRT.dispose();
       this.envRT = this.pmrem.fromScene(this.envScene, 0, 1, 2000);
       this.scene.environment = this.envRT.texture;
-      this.scene.environmentIntensity = lerp(0.5, 0.35, this.night) * (1 + this.rain * 0.4);
-      this.skyScale.value = lerp(0.45, 0.9, this.night);
+      this.scene.environmentIntensity = lerp(0.85, 0.4, this.night) * (1 - this.rain * 0.3);
+      this.skyScale.value = lerp(0.72, 0.95, this.night);
     }
 
-    // weather
+    // weather — Miami: mostly sunny, occasional tropical rain
     this.weatherTimer -= dt;
     if (this.weatherTimer <= 0) {
-      this.weatherTimer = 90 + Math.random() * 150;
-      this.rainTarget = this.rainTarget > 0 ? 0 : (Math.random() < 0.4 ? 0.6 + Math.random() * 0.4 : 0);
+      this.weatherTimer = 120 + Math.random() * 200;
+      this.rainTarget = this.rainTarget > 0 ? 0 : (Math.random() < 0.25 ? 0.5 + Math.random() * 0.5 : 0);
     }
     this.rain = lerp(this.rain, this.rainTarget, 1 - Math.exp(-dt * 0.15));
     shared.uWet.value = clamp(this.rain * 1.6, 0, 1);

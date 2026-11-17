@@ -14,10 +14,10 @@ import { waterNormals, sandTexture, neonSignTexture, palmFrondTexture, tileTextu
 const tmpColor = new THREE.Color();
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 
-const GLASS = [0x6f8fa6, 0x4f6f88, 0x8aa2b0, 0x3d5566, 0xa0b4c0, 0x557a7a, 0x7d8f9c, 0x2f4c63];
-const MID = [0xd9c7a7, 0xc2b8a3, 0xe0d5c0, 0xb7a58d, 0xcfa98a, 0xe6e0d4, 0x9fb1b8, 0xc9b79c, 0xb08f73];
-const PASTEL = [0xffb3c7, 0x9fe8d8, 0xc7b3ff, 0xffd1a6, 0xa6d8ff, 0xfff1c9, 0xff9fb0, 0xb8f0b0, 0xf6c0ff, 0xffffff];
-const HOUSE = [0xf5efe3, 0xffe2c4, 0xd8f0ee, 0xf2d6e4, 0xe8e4ff, 0xfff8d6, 0xe2d2bf];
+const GLASS = [0x8db8cc, 0x7aaabb, 0xa0c8d8, 0x6a9aaf, 0xb0d0dd, 0x78b0b8, 0x9cc0cc, 0x88c0d4];
+const MID = [0xf0e6d2, 0xe8dcc8, 0xf5eed8, 0xddd0b8, 0xeac8a0, 0xf2ece0, 0xd8e0e8, 0xe8d8c4, 0xf0dcc0];
+const PASTEL = [0xffb3c7, 0xa0eee0, 0xcfc0ff, 0xffd8b0, 0xb0e0ff, 0xfff4d0, 0xffaabb, 0xc0f5c0, 0xf8c8ff, 0xffffff];
+const HOUSE = [0xfaf4ea, 0xffe8cc, 0xe4f4f2, 0xf6dce8, 0xede8ff, 0xfffae0, 0xecdcc8];
 const NEON = [[3.2, 0.25, 1.6], [0.2, 2.6, 3.2], [2.4, 0.4, 3.4], [0.4, 3.2, 1.0], [3.4, 1.8, 0.2], [3.4, 0.3, 0.4]];
 const NEON_CSS = ['#ff3fa4', '#2ef2ff', '#b44dff', '#3dff7a', '#ffb02e', '#ff3355'];
 const HOTEL_NAMES = ['SOLARA', 'CORAL', 'MARLIN', 'AZURE', 'LUNA', 'OASIS', 'TIDE', 'PALMAS', 'NOVA', 'BREEZE', 'LAGUNA', 'SIRENA', 'COSTA', 'ESTRELLA'];
@@ -929,7 +929,7 @@ export class World {
     const geo = new THREE.PlaneGeometry(8000, 8000);
     this.water = new Water(geo, {
       textureWidth: 512, textureHeight: 512, waterNormals: waterNormals(),
-      sunDirection: new THREE.Vector3(0.7, 0.7, 0), sunColor: 0xffe0a0, waterColor: 0x004466, distortionScale: 2.8, fog: true,
+      sunDirection: new THREE.Vector3(0.7, 0.7, 0), sunColor: 0xfff0c0, waterColor: 0x0099aa, distortionScale: 2.5, fog: true,
     });
     this.water.rotation.x = -Math.PI / 2;
     this.water.position.y = WATER_Y;
@@ -937,7 +937,7 @@ export class World {
     this.scene.add(this.water);
     // cheap fallback water for low quality
     const n = waterNormals(); n.repeat.set(400, 400);
-    this.waterLow = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x0d5a6a, roughness: 0.06, metalness: 0.45, normalMap: n, normalScale: new THREE.Vector2(0.5, 0.5) }));
+    this.waterLow = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x1a8a9a, roughness: 0.06, metalness: 0.4, normalMap: n, normalScale: new THREE.Vector2(0.5, 0.5) }));
     this.waterLow.rotation.x = -Math.PI / 2; this.waterLow.position.y = WATER_Y;
     this.waterLow.visible = false;
     this.scene.add(this.waterLow);
@@ -989,7 +989,7 @@ export class World {
       wu.sunDirection.value.copy(sunDir).y = Math.abs(sunDir.y);
       wu.sunColor.value.copy(sunColor).multiplyScalar(1 - night * 0.75);
       // deeper tropical ocean at day, dark navy at night
-      const dR = 0.0 * (1 - night) + 0.003, dG = 0.12 * (1 - night) + 0.008, dB = 0.24 * (1 - night) + 0.025;
+      const dR = 0.02 * (1 - night) + 0.003, dG = 0.22 * (1 - night) + 0.01, dB = 0.32 * (1 - night) + 0.03;
       wu.waterColor.value.setRGB(dR, dG, dB);
     }
     // neon intensity (lower during day)

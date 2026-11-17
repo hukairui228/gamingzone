@@ -71,7 +71,7 @@ export function buildingMaterial() {
     // subtle dirt / variation
     diffuseColor.rgb *= 0.9 + 0.1 * vnoise(vec2(u, v) * 0.3 + seed);
   } else if (n.y > 0.5) {
-    diffuseColor.rgb *= 0.55 * (0.85 + 0.15 * vnoise(vWPos.xz * 0.5));
+    diffuseColor.rgb *= 0.75 * (0.88 + 0.12 * vnoise(vWPos.xz * 0.5));
     roughnessFactor = 0.95;
   }
   roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.6, uWet);
@@ -142,14 +142,14 @@ float rough = 0.9;
   vec2 p = vWPos.xz;
   float nz = fbm(p * 0.15);
   float fine = vnoise(p * 3.0);
-  vec3 asphalt = vec3(0.075, 0.075, 0.08) * (0.8 + 0.35 * nz + 0.15 * fine);
+  vec3 asphalt = vec3(0.13, 0.125, 0.12) * (0.85 + 0.3 * nz + 0.12 * fine);
   float isRoad = 0.0, mark = 0.0, yellow = 0.0;
   bool inCity = p.x > -HW && p.x < NX * P + HW && p.y > -HW && p.y < NZ * P + HW;
   bool inCause = p.x >= CAUSE.x && p.x <= CAUSE.y && p.y >= CAUSE.z && p.y <= CAUSE.w;
   bool inIsl = p.x >= ISL.x && p.x <= ISL.y && p.y >= ISL.z && p.y <= ISL.w;
   if (abs(n.y) < 0.5) {
     // curb faces
-    gcol = vec3(0.55, 0.54, 0.52) * (0.85 + 0.15 * fine); rough = 0.8;
+    gcol = vec3(0.65, 0.63, 0.60) * (0.88 + 0.12 * fine); rough = 0.8;
   } else if (inCause || (inIsl && p.x < IEND + 14.0 && abs(p.y - CZ) < HW)) {
     float lat = p.y - CZ;
     if (abs(lat) < HW) { isRoad = 1.0; mark = roadMarks(lat, p.x, yellow); }
@@ -188,7 +188,7 @@ float rough = 0.9;
       float d = texture2D(uDistrict, (bij + 0.5) / vec2(NX, NZ)).r * 255.0 / 30.0;
       vec3 tile = texture2D(uTiles, p * 0.25).rgb;
       if (side) {
-        gcol = tile * vec3(0.92, 0.9, 0.88); rough = 0.75;
+        gcol = tile * vec3(0.96, 0.94, 0.91); rough = 0.72;
         // curb edge strip
         float ce = min(abs(lx), abs(lz));
         if (ce < HW + 0.35) gcol = vec3(0.72, 0.7, 0.66);
@@ -204,7 +204,7 @@ float rough = 0.9;
         gcol = vec3(0.42, 0.42, 0.4) * (0.75 + 0.35 * nz); rough = 0.85;
         if (fract(p.x / 12.0) < 0.012 || fract(p.y / 12.0) < 0.012) gcol *= 0.6;
       } else {
-        gcol = tile * vec3(0.8, 0.78, 0.75); rough = 0.8;
+        gcol = tile * vec3(0.88, 0.86, 0.82); rough = 0.78;
       }
     }
   } else {

@@ -18,8 +18,8 @@ const GLASS = [0x8db8cc, 0x7aaabb, 0xa0c8d8, 0x6a9aaf, 0xb0d0dd, 0x78b0b8, 0x9cc
 const MID = [0xf0e6d2, 0xe8dcc8, 0xf5eed8, 0xddd0b8, 0xeac8a0, 0xf2ece0, 0xd8e0e8, 0xe8d8c4, 0xf0dcc0];
 const PASTEL = [0xffb3c7, 0xa0eee0, 0xcfc0ff, 0xffd8b0, 0xb0e0ff, 0xfff4d0, 0xffaabb, 0xc0f5c0, 0xf8c8ff, 0xffffff];
 const HOUSE = [0xfaf4ea, 0xffe8cc, 0xe4f4f2, 0xf6dce8, 0xede8ff, 0xfffae0, 0xecdcc8];
-const NEON = [[3.2, 0.25, 1.6], [0.2, 2.6, 3.2], [2.4, 0.4, 3.4], [0.4, 3.2, 1.0], [3.4, 1.8, 0.2], [3.4, 0.3, 0.4]];
-const NEON_CSS = ['#ff3fa4', '#2ef2ff', '#b44dff', '#3dff7a', '#ffb02e', '#ff3355'];
+const NEON = [[3.4, 1.0, 1.6], [3.2, 2.0, 0.6], [2.0, 1.2, 3.0], [3.6, 2.4, 1.0], [3.0, 0.8, 1.2], [2.6, 2.8, 3.0]];
+const NEON_CSS = ['#ff5090', '#ffaa44', '#8866dd', '#ffcc44', '#ff6688', '#88ccff'];
 const HOTEL_NAMES = ['SOLARA', 'CORAL', 'MARLIN', 'AZURE', 'LUNA', 'OASIS', 'TIDE', 'PALMAS', 'NOVA', 'BREEZE', 'LAGUNA', 'SIRENA', 'COSTA', 'ESTRELLA'];
 
 export class World {
@@ -993,9 +993,9 @@ export class World {
       wu.waterColor.value.setRGB(dR, dG, dB);
     }
     // neon intensity (lower during day)
-    const ni = 0.35 + night * 0.8;
+    const ni = 0.15 + night * 1.0;
     this.neonMat.color.setScalar(ni);
-    for (const m of this.signMeshes) m.material.color.setScalar(0.5 + night * 2.2);
+    for (const m of this.signMeshes) m.material.color.setScalar(0.3 + night * 2.4);
     this.lampHeadMat.color.setRGB(0.8 + night * 4, 0.7 + night * 3.2, 0.55 + night * 2.2);
     // traffic lights
     this.signalTimer -= dt;

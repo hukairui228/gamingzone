@@ -74,6 +74,7 @@ export class HUD {
     icon('gunshop', '枪', '#ff3355'); icon('hospital', '+', '#ff5577'); icon('safehouse', '⌂', '#3dff7a');
     if (G.activities) for (const b of G.activities.blips()) out.push(b);
     if (G.missions) for (const b of G.missions.blips()) out.push(b);
+    if (G.territories) for (const b of G.territories.blips()) out.push(b);
     if (G.waypoint) out.push({ x: G.waypoint.x, z: G.waypoint.z, ch: '◆', col: '#ff3fa4', edge: true });
     return out;
   }
@@ -89,6 +90,22 @@ export class HUD {
     $('arbar').style.width = clamp(pl.char.armor, 0, 100) + '%';
     $('focusbar').style.width = pl.focus * 100 + '%';
     $('focusoverlay').classList.toggle('on', pl.focusOn);
+    // swim stamina bar
+    const swimBar = $('swimbar');
+    if (swimBar) {
+      swimBar.parentElement.style.display = pl.swimming ? '' : 'none';
+      swimBar.style.width = pl.swimStamina * 100 + '%';
+      swimBar.style.background = pl.swimStamina < 0.25 ? '#ff3355' : '#2ef2ff';
+    }
+    // territory battle progress
+    const tprog = $('territoryprog');
+    if (tprog && G.territories) {
+      tprog.style.display = G.territories.battleActive ? '' : 'none';
+      if (G.territories.battleActive) {
+        const pct = G.territories.battleProgress * 100;
+        tprog.querySelector('.fill').style.width = pct + '%';
+      }
+    }
     const v = pl.inVehicle;
     if (v) {
       $('speedval').textContent = Math.round(Math.abs(v.vF) * 3.6);
@@ -348,7 +365,7 @@ export class HUD {
     const r = (k, d) => `<kbd>${k}</kbd><span>${d}</span>`;
     return `<h3>步行</h3><div class="help-grid">
 ${r('W A S D', '移动')}${r('鼠标', '视角')}${r('左键', '射击 / 出拳')}${r('右键', '瞄准')}${r('Shift', '冲刺')}${r('空格', '跳跃')}
-${r('F', '上车 / 下车 / 抢车')}${r('Q / 滚轮 / 1-7', '切换武器')}${r('G', '手雷')}${r('E', '专注时间（子弹时间）')}</div>
+${r('F', '上车 / 下车 / 抢车')}${r('Q / 滚轮 / 1-7', '切换武器')}${r('G', '手雷')}${r('E', '专注时间（子弹时间）')}${r('N', '手机菜单')}</div>
 <h3>驾驶</h3><div class="help-grid">
 ${r('W / S', '油门 / 刹车倒车')}${r('A / D', '转向')}${r('空格', '手刹（漂移！）')}${r('Shift', '氮气加速（需改装）')}${r('H', '喇叭')}${r('R', '切换电台')}
 ${r('C', '切换镜头')}${r('V', '回头看')}${r('左键', '驾车射击（手枪/冲锋枪）')}${r('T', '出租车里开始载客任务')}</div>

@@ -4,7 +4,7 @@ import { clamp } from './util.js';
 const KEYMAP = {
   fire: [], aim: [], jump: ['Space'], sprint: ['ShiftLeft', 'ShiftRight'], enter: ['KeyF', 'Enter'],
   weapon: ['KeyQ'], focus: ['KeyE'], horn: ['KeyH'], radio: ['KeyR'], pause: ['Escape', 'KeyM'], photo: ['KeyP'],
-  taxi: ['KeyT'], cam: ['KeyC'], lookback: ['KeyV'], interact: ['KeyF'], grenade: ['KeyG'],
+  taxi: ['KeyT'], cam: ['KeyC'], lookback: ['KeyV'], interact: ['KeyF'], grenade: ['KeyG'], phone: ['KeyN'],
   w1: ['Digit1'], w2: ['Digit2'], w3: ['Digit3'], w4: ['Digit4'], w5: ['Digit5'], w6: ['Digit6'], w7: ['Digit7'],
 };
 

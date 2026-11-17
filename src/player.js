@@ -34,6 +34,9 @@ export class Player {
     this.prevWheels = null;
     this.stunt = null;
     this.zoneTimer = 0;
+    this.swimming = false;
+    this.swimStamina = 1;
+    this.waterY = 0;
   }
 
   get x() { return this.inVehicle ? this.inVehicle.x : this.char.x; }
@@ -46,6 +49,8 @@ export class Player {
     this.char.hp = 100; this.char.armor = save.armor || 0;
     for (const w of WEAPON_ORDER) if (save.weapons[w]) this.mag[w] = Math.min(WEAPONS[w].mag || 0, save.ammo[w] || 0);
     this.selectWeapon('fist');
+    this.swimming = false;
+    this.swimStamina = 1;
   }
 
   place(x, z, h = 0) {
@@ -53,6 +58,8 @@ export class Player {
     this.char.y = Math.max(0, groundHeight(x, z));
     this.camYaw = h;
     this.char.sync();
+    this.swimming = false;
+    this.swimStamina = 1;
   }
 
   // ---------------- weapons ----------------
@@ -142,6 +149,18 @@ export class Player {
     this.char.mesh.visible = true;
     this.char.x = px; this.char.z = pz; this.char.y = Math.max(groundHeight(px, pz), v.y);
     this.char.h = v.h;
+    // If exiting into water, start swimming
+    const exitGh = groundHeight(px, pz);
+    if (exitGh < -5) {
+      this.char.y = WATER_Y - 0.3;
+      this.camYaw = v.h + this.carCamYawOff;
+      this.headlight.intensity = 0;
+      G.audio && G.audio.door();
+      G.events.emit('exitVehicle', v);
+      G.hud && G.hud.vehicle(null);
+      this.enterWater();
+      return;
+    }
     this.camYaw = v.h + this.carCamYawOff;
     this.headlight.intensity = 0;
     G.audio && G.audio.door();
@@ -171,6 +190,16 @@ export class Player {
     const sens = 0.0022 * G.settings.sensitivity;
     const inv = G.settings.invertY ? -1 : 1;
     if (this.char.dead) { this.updateDeadCam(rdt); return; }
+
+    if (this.swimming) {
+      if (input.pressed('enter')) {
+        const v = G.vehicles.nearest(this.char.x, this.char.z, 5, (v) => !v.dead && v.t.boat);
+        if (v) { this.swimming = false; this.enterVehicle(v); }
+      }
+      this.updateSwimming(dt, rdt, input);
+      this.updateCameraFov(rdt);
+      return;
+    }
 
     if (input.wheel) this.cycleWeapon(input.wheel);
     if (input.pressed('weapon')) this.cycleWeapon(1);
@@ -204,7 +233,7 @@ export class Player {
     if (fireLike && canShoot && this.fireCd <= 0 && this.reload <= 0) {
       if (w.auto || input.pressed('fire') || (this.gpFireHeld(input))) this.shoot();
     }
-    this.char.aim = !this.inVehicle && (input.held('aim') || G.time - this.lastShot < 0.6) && this.weapon !== 'fist';
+    this.char.aim = !this.inVehicle && (input.held('aim') || G.time - this.lastShot < 0.6) && !WEAPONS[this.weapon].melee;
     this.updateCameraFov(rdt);
   }
   gpFireHeld(input) { return input.gpActive && input.held('fire') && this.fireCd < -0.15; }
@@ -235,11 +264,11 @@ export class Player {
 
   shoot() {
     const w = WEAPONS[this.weapon];
-    if (this.weapon === 'fist') {
+    if (w.melee) {
       this.fireCd = w.rate;
       this.char.punchT = 0.35;
       this.char.h = this.camYaw;
-      G.combat.melee(this, this.char.x, this.char.z, this.char.h);
+      G.combat.melee(this, this.char.x, this.char.z, this.char.h, this.weapon);
       return;
     }
     if ((this.mag[this.weapon] || 0) <= 0) {
@@ -336,8 +365,11 @@ export class Player {
       else if (gh < c.y - 0.6) this.grounded = false;
     }
     // stand on car roof
-    // water
-    if (gh < -10 && c.y < WATER_Y + 0.2) this.rescueFromWater();
+    // water - enter swimming
+    if (gh < -10 && c.y < WATER_Y + 0.2) {
+      this.enterWater();
+      return;
+    }
     c.animate(dt, Math.hypot(c.vx, c.vz), { air: !this.grounded });
     c.aimPitch = this.camPitch + 0.12;
     c.sync();
@@ -352,15 +384,70 @@ export class Player {
   }
 
   rescueFromWater() {
-    G.hud && G.hud.notify('你不会游泳，被冲回了岸边…');
     const c = this.char;
-    // walk toward city center until on land
     let x = c.x, z = c.z;
     const cx = (CITY.x0 + CITY.x1) / 2, cz = (CITY.z0 + CITY.z1) / 2;
     for (let k = 0; k < 400 && !isLand(x, z); k++) { const dx = cx - x, dz = cz - z, L = Math.hypot(dx, dz); x += dx / L * 4; z += dz / L * 4; }
     x += (cx - x) * 0.01; z += (cz - z) * 0.01;
     c.x = x; c.z = z; c.y = Math.max(0, groundHeight(x, z)); c.vx = c.vz = 0;
+    this.swimming = false;
+    this.grounded = true;
+    this.swimStamina = 1;
     this.hurt(15, null);
+    G.hud && G.hud.notify('你精疲力竭，被冲回了岸边…');
+  }
+
+  enterWater() {
+    if (this.swimming) return;
+    this.swimming = true;
+    this.waterY = WATER_Y;
+    this.grounded = false;
+    this.vy = 0;
+    this.char.vx *= 0.3;
+    this.char.vz *= 0.3;
+    G.hud && G.hud.notify('按住方向键游泳');
+    G.audio && G.audio.splash && G.audio.splash();
+  }
+
+  updateSwimming(dt, rdt, input) {
+    const c = this.char;
+    const mv = input.move;
+    const sprint = input.held('sprint');
+    const swimSpeed = sprint ? 4.5 : 2.8;
+    const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
+    const rx = -fz, rz = fx;
+    let wx = fx * mv.y + rx * mv.x, wz = fz * mv.y + rz * mv.x;
+    const ml = Math.hypot(wx, wz);
+    if (ml > 1) { wx /= ml; wz /= ml; }
+    c.vx = damp(c.vx || 0, wx * swimSpeed, 4, dt);
+    c.vz = damp(c.vz || 0, wz * swimSpeed, 4, dt);
+    c.x += c.vx * dt;
+    c.z += c.vz * dt;
+    const bobY = this.waterY + Math.sin(G.time * 2 + c.x * 0.5) * 0.08 - 0.4;
+    c.y = damp(c.y, bobY, 6, dt);
+    if (sprint && ml > 0.1) this.swimStamina -= dt * 0.12;
+    else if (ml > 0.1) this.swimStamina -= dt * 0.03;
+    else this.swimStamina -= dt * 0.015;
+    this.swimStamina = clamp(this.swimStamina, 0, 1);
+    if (this.swimStamina <= 0) {
+      c.y -= dt * 0.5;
+      if (c.y < this.waterY - 2) { this.rescueFromWater(); return; }
+    }
+    const gh = groundHeight(c.x, c.z);
+    if (gh > -2 && isLand(c.x, c.z)) {
+      c.y = Math.max(0, gh);
+      this.swimming = false;
+      this.grounded = true;
+      this.vy = 0;
+      G.hud && G.hud.notify('');
+      return;
+    }
+    if (ml > 0.1) c.h = dampAngle(c.h, Math.atan2(wx, wz), 6, dt);
+    c.animate(dt, Math.hypot(c.vx, c.vz) * 0.5, { air: false });
+    c.sync();
+    const push = G.world.statics.collideCircle(c.x, c.z, 0.38, c.y, this._push || (this._push = {}));
+    if (push) { c.x += push.x; c.z += push.z; }
+    this.updateFootCam(dt, rdt);
   }
 
   updateFootCam(dt, rdt) {

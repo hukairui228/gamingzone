@@ -20,7 +20,9 @@
     <div class="bar"><div id="hpbar"></div></div>
     <div class="bar armor"><div id="arbar"></div></div>
     <div class="bar focus"><div id="focusbar"></div></div>
+    <div class="bar swim"><div id="swimbar"></div></div>
   </div>
+  <div id="territoryprog" style="display:none"><div class="label">占领进度</div><div class="progbar"><div class="fill"></div></div></div>
   <div id="minimapwrap"><canvas id="minimap" width="220" height="220"></canvas><div id="zone"></div></div>
   <div id="speedo" class="hidden">
     <div id="speedval">0</div><div class="unit">km/h</div>
@@ -98,6 +100,21 @@
   <h2 id="shopTitle"></h2>
   <div id="shopBody"></div>
   <button id="btnShopClose" class="mbtn">离开</button>
+</div>
+
+<div id="phone" class="menu hidden">
+  <div class="phone-frame">
+    <div class="phone-header">手机</div>
+    <div class="phone-grid">
+      <button class="phone-btn" data-phone="map"><span>地图</span></button>
+      <button class="phone-btn" data-phone="weapons"><span>武器库</span></button>
+      <button class="phone-btn" data-phone="stats"><span>统计</span></button>
+      <button class="phone-btn" data-phone="territory"><span>地盘</span></button>
+      <button class="phone-btn" data-phone="save"><span>存档</span></button>
+      <button class="phone-btn" data-phone="close"><span>关闭</span></button>
+    </div>
+    <div id="phone-detail" class="hidden"></div>
+  </div>
 </div>
 
 <div id="photo" class="hidden"><div>📷 拍照模式 · 鼠标拖动旋转 · 滚轮缩放 · 1-5 切换滤镜 · P 退出</div></div>

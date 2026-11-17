@@ -41,6 +41,7 @@ export class Activities {
     this.markers.garage = new Marker(m.garage.x, m.garage.z, 0xffb02e, 3.5, 6);
     this.raceMarkers = RACES.map((r) => new Marker(r.start.x, r.start.z, 0x2ef2ff, 3, 18));
     this.driftMarker = new Marker(-20, 6 * P + 40, 0xb44dff, 3, 18);
+    this.spawnBoats();
   }
 
   blips() {
@@ -202,6 +203,23 @@ export class Activities {
     G.hud.big('游戏已保存', 'blue', '安全屋', 2);
     G.player.char.hp = 100;
     G.audio.ui('evade');
+  }
+
+  spawnBoats() {
+    const spawns = [
+      { x: CITY.x0 - 15, z: 3 * P, h: Math.PI / 2, type: 'speedboat' },
+      { x: CITY.x0 - 15, z: 7 * P, h: Math.PI / 2, type: 'speedboat' },
+      { x: BEACH.x0 + 70, z: 2 * P, h: 0, type: 'jetski' },
+      { x: BEACH.x0 + 70, z: 8 * P, h: Math.PI, type: 'jetski' },
+      { x: BEACH.x0 + 80, z: 5 * P, h: Math.PI / 2, type: 'speedboat' },
+      { x: 2 * P, z: 0 * P - 5, h: Math.PI / 2, type: 'motorcycle' },
+      { x: 5 * P + 10, z: 3 * P, h: 0, type: 'sportbike' },
+      { x: 8 * P, z: 9 * P + 10, h: Math.PI, type: 'dirtbike' },
+      { x: 1 * P + 10, z: 7 * P, h: Math.PI / 2, type: 'motorcycle' },
+    ];
+    for (const d of spawns) {
+      G.vehicles.spawn(d.type, d.x, d.z, d.h, undefined, { persistent: true });
+    }
   }
 
   // ---------------- taxi ----------------

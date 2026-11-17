@@ -32,6 +32,8 @@ export function defaultSave() {
     garageCar: null,    // {type, color, glow, engine, armor, nitro}
     unlocked: { garage: false, supercar: false },
     stats: { kills: 0, carsStolen: 0, distance: 0, bestDrift: 0, maxWanted: 0, taxiFares: 0, racesWon: 0, playTime: 0, deaths: 0, busted: 0 },
+    territories: null,
+    properties: [],
     hour: 18.55,
   };
 }

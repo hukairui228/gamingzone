@@ -11,11 +11,12 @@ import { VehicleSystem } from './vehicle.js';
 import { TrafficSystem } from './traffic.js';
 import { PedSystem } from './peds.js';
 import { Police } from './police.js';
-import { Combat } from './weapons.js';
+import { Combat, WEAPONS } from './weapons.js';
 import { Player } from './player.js';
 import { Pickups } from './pickups.js';
 import { Activities } from './activities.js';
 import { Missions } from './missions.js';
+import { Territories } from './territories.js';
 import { HUD } from './hud.js';
 import { clamp, lerp, fmtMoney } from './util.js';
 import { shared } from './materials.js';
@@ -71,6 +72,7 @@ async function boot() {
   G.pickups = new Pickups();
   G.activities = new Activities();
   G.missions = new Missions();
+  G.territories = new Territories();
   G.player = new Player(scene);
   G.player.char.mesh.visible = false;
   G.player.place(BEACH.x0 - 20, 6 * P, 0); // title-screen anchor so traffic spawns around the camera
@@ -175,6 +177,7 @@ function startGame(fresh) {
   G.setPaused(false);
   G.pickups.items.length || G.pickups.init();
   G.activities.markers.gunshop || G.activities.init();
+  G.territories.init();
   G.hud.weapon();
   G.hud.stars(0);
   if (fresh) {
@@ -281,6 +284,7 @@ function setupMenus() {
   $('btnQuit').onclick = () => { G.persist(); location.reload(); };
   document.querySelectorAll('#pause .tab').forEach((t) => t.addEventListener('click', () => selectTab(t.dataset.tab)));
   wireEvents();
+  wirePhone();
   // browsers swallow Esc to release pointer lock: treat losing the lock mid-game as a pause request
   document.addEventListener('pointerlockchange', () => {
     if (!document.pointerLockElement && G.started && !G.paused && !G.photo && !G.input.touchMode && G.input.wantLock) openPause();
@@ -318,6 +322,58 @@ function showTitle() {
   G.titleCam = true;
   G.paused = true;
   G.hud.showHUD(false);
+}
+
+// ---------------- phone menu ----------------
+function togglePhone() {
+  const el = $('phone');
+  if (!el.classList.contains('hidden')) { closePhone(); return; }
+  G.setPaused(true, 'phone');
+  el.classList.remove('hidden');
+  $('phone-detail').classList.add('hidden');
+}
+function closePhone() {
+  $('phone').classList.add('hidden');
+  G.setPaused(false);
+}
+function wirePhone() {
+  document.querySelectorAll('.phone-btn').forEach((b) => b.addEventListener('click', () => {
+    const act = b.dataset.phone;
+    if (act === 'close') { closePhone(); return; }
+    if (act === 'map') { closePhone(); openPause(); return; }
+    if (act === 'save') {
+      if (G.police && G.police.level > 0) { G.hud.notify('被通缉时不能存档'); return; }
+      G.persist(); G.hud.notify('游戏已保存 ✔'); closePhone(); return;
+    }
+    const detail = $('phone-detail');
+    detail.classList.remove('hidden');
+    if (act === 'weapons') {
+      let h = '<h3 style="color:var(--cyan);margin:0 0 8px">武器库</h3>';
+      for (const [id, w] of Object.entries(WEAPONS)) {
+        const owned = G.save.weapons[id];
+        const ammo = G.save.ammo[id] || 0;
+        h += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.1)">`;
+        h += `<span>${w.icon} ${w.name}</span>`;
+        h += `<span style="color:${owned ? '#3dff7a' : '#888'}">${owned ? (w.melee ? '已拥有' : `弹药: ${ammo}`) : '未解锁'}</span></div>`;
+      }
+      detail.innerHTML = h;
+    } else if (act === 'stats') {
+      detail.innerHTML = G.hud.statsHTML();
+    } else if (act === 'territory') {
+      let h = '<h3 style="color:var(--gold);margin:0 0 8px">地盘势力</h3>';
+      if (G.territories) {
+        const t = G.territories;
+        for (const [id, g] of Object.entries(t.gangs)) {
+          h += `<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.1)">`;
+          h += `<span style="color:${g.color}">${g.name}</span></div>`;
+        }
+        const captured = G.save.territories ? Object.values(G.save.territories).filter(v => v === 'player').length : 0;
+        h += `<div style="margin-top:8px;color:var(--cyan)">已占领: ${captured} / ${Object.keys(t.zones).length} 个区域</div>`;
+        h += `<div style="color:var(--gold)">每分钟收入: $${captured * 200}</div>`;
+      }
+      detail.innerHTML = h;
+    }
+  }));
 }
 
 // ---------------- photo mode ----------------
@@ -368,10 +424,12 @@ function loop(now) {
 
   if (G.started) {
     if (inp.pressed('pause') && !G.photo) {
-      if (!$('pause').classList.contains('hidden')) closePause();
+      if (!$('phone').classList.contains('hidden')) closePhone();
+      else if (!$('pause').classList.contains('hidden')) closePause();
       else if (!$('shop').classList.contains('hidden')) G.activities.closePanel();
       else if (!G.paused) openPause();
     }
+    if (inp.pressed('phone') && !G.paused && !G.photo) togglePhone();
     if (inp.pressed('photo') && (!G.paused || G.photo)) togglePhoto();
   }
 
@@ -420,6 +478,7 @@ function simStep(dt, rdt) {
   G.pickups.update(dt);
   G.activities.update(dt);
   G.missions.update(dt);
+  G.territories.update(dt);
   G.fx.update(dt);
   if (G.bustAnim > 0) { G.bustAnim -= rdt; pl.char.animate(rdt, 0, { handsUp: true }); }
   G.hud.update(rdt);

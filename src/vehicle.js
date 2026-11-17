@@ -60,8 +60,33 @@ export const CAR_TYPES = {
     body: [[0, .5], [0, 2.2], [.76, 2.2], [.76, 1.3], [.97, 1.2], [1, 1.0], [1, .5], [.97, .4], [.03, .4]],
     cabin: [[.755, 1.28], [.755, 2.18], [.78, 2.18], [.92, 1.3]], colors: [0x4a5a4a], value: 2000,
   },
+  motorcycle: {
+    name: '飞隼摩托', L: 2.2, Wd: 0.55, power: 18, top: 62, grip: 6.5, mass: 220, hp: 300,
+    wr: 0.34, wf: 0.85, wb: 0.15, bike: true,
+    body: null, cabin: null, colors: [0xd7263d, 0x111111, 0x2e86ab, 0xf18f01, 0xff6fb5, 0x5b2a86, 0xf4f4f4], value: 1200,
+  },
+  sportbike: {
+    name: '闪电猎豹', L: 2.1, Wd: 0.5, power: 26, top: 78, grip: 7.5, mass: 190, hp: 250,
+    wr: 0.33, wf: 0.86, wb: 0.14, bike: true,
+    body: null, cabin: null, colors: [0xd7263d, 0x2ef2ff, 0xffd166, 0x3dff7a, 0xff3fa4], value: 3500,
+  },
+  dirtbike: {
+    name: '越野摩托', L: 2.0, Wd: 0.5, power: 15, top: 52, grip: 8, mass: 160, hp: 220,
+    wr: 0.38, wf: 0.84, wb: 0.16, bike: true,
+    body: null, cabin: null, colors: [0xf18f01, 0xd7263d, 0x2e86ab, 0x3dff7a, 0xf4f4f4], value: 800,
+  },
+  jetski: {
+    name: '海鲨水摩', L: 2.8, Wd: 1.2, power: 16, top: 45, grip: 4, mass: 300, hp: 500,
+    wr: 0, wf: 0, wb: 0, boat: true,
+    body: null, cabin: null, colors: [0xd7263d, 0x2ef2ff, 0xf4f4f4, 0xff6fb5], value: 1800,
+  },
+  speedboat: {
+    name: '碧波快艇', L: 7.0, Wd: 2.4, power: 22, top: 52, grip: 3.5, mass: 1200, hp: 1200,
+    wr: 0, wf: 0, wb: 0, boat: true,
+    body: null, cabin: null, colors: [0xffffff, 0x2e86ab, 0xd7263d], value: 5000,
+  },
 };
-export const TRAFFIC_MIX = ['sedan', 'sedan', 'sedan', 'coupe', 'suv', 'suv', 'taxi', 'taxi', 'pickup', 'van', 'muscle', 'coupe', 'super'];
+export const TRAFFIC_MIX = ['sedan', 'sedan', 'sedan', 'coupe', 'suv', 'suv', 'taxi', 'taxi', 'pickup', 'van', 'muscle', 'coupe', 'super', 'motorcycle', 'motorcycle'];
 
 // ---------------- shared materials ----------------
 const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x0c1218, metalness: 0.3, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.6 });
@@ -122,6 +147,82 @@ function buildGeometry(key, t) {
   geomCache.set(key, res);
   return res;
 }
+
+function buildBikeGeometry(key, t) {
+  if (geomCache.has(key)) return geomCache.get(key);
+  const L = t.L;
+  const geos = [];
+  const box = (w, h, d, x, y, z) => { const b = new THREE.BoxGeometry(w, h, d); b.translate(x, y, z); geos.push(b); };
+  // main frame tube
+  box(0.07, 0.12, L * 0.65, 0, 0.62, 0);
+  // gas tank
+  box(0.28, 0.18, 0.44, 0, 0.78, L * 0.12);
+  // seat
+  box(0.24, 0.07, 0.55, 0, 0.78, -L * 0.12);
+  // engine block
+  box(0.3, 0.22, 0.32, 0, 0.46, L * 0.02);
+  // front fork tubes
+  for (const s of [-0.06, 0.06]) {
+    const f = new THREE.CylinderGeometry(0.025, 0.025, 0.65, 6);
+    f.rotateX(-0.25); f.translate(s, 0.62, L * 0.35); geos.push(f);
+  }
+  // handlebars
+  box(0.52, 0.035, 0.035, 0, 0.92, L * 0.3);
+  // exhaust pipes
+  for (const s of [0.14, -0.14]) {
+    const ex = new THREE.CylinderGeometry(0.025, 0.035, 0.7, 6);
+    ex.rotateX(Math.PI / 2 + 0.15); ex.translate(s, 0.38, -L * 0.2); geos.push(ex);
+  }
+  // rear fender
+  box(0.2, 0.035, 0.4, 0, 0.48, -L * 0.3);
+  // headlight
+  const hl = new THREE.BoxGeometry(0.16, 0.1, 0.06); hl.translate(0, 0.82, L * 0.46);
+  // taillight
+  const tl = new THREE.BoxGeometry(0.1, 0.06, 0.04); tl.translate(0, 0.56, -L * 0.48);
+  const merged = mergeGeometries(geos.map(g => { g.deleteAttribute('uv'); return g; }));
+  const res = { body: merged, cabin: null, trims: null, head: hl, tail: tl, frontH: 0.92, lightY: 0.82 };
+  geomCache.set(key, res);
+  return res;
+}
+
+function buildBoatGeometry(key, t) {
+  if (geomCache.has(key)) return geomCache.get(key);
+  const L = t.L, Wd = t.Wd;
+  const geos = [];
+  const box = (w, h, d, x, y, z) => { const b = new THREE.BoxGeometry(w, h, d); b.translate(x, y, z); geos.push(b); };
+  // hull bottom
+  box(Wd, 0.15, L, 0, 0.08, 0);
+  // hull sides
+  box(0.1, 0.5, L, Wd / 2, 0.35, 0);
+  box(0.1, 0.5, L, -Wd / 2, 0.35, 0);
+  // stern
+  box(Wd, 0.5, 0.1, 0, 0.35, -L / 2);
+  // deck
+  box(Wd - 0.2, 0.08, L * 0.9, 0, 0.16, -L * 0.05);
+  // bow point (wedge from cone)
+  const bow = new THREE.ConeGeometry(Wd / 2, L * 0.25, 4, 1);
+  bow.rotateY(Math.PI / 4); bow.rotateX(-Math.PI / 2);
+  bow.translate(0, 0.3, L / 2 + L * 0.08); geos.push(bow);
+  // windshield
+  const ws = new THREE.BoxGeometry(Wd * 0.6, 0.45, 0.06);
+  ws.rotateX(-0.3); ws.translate(0, 0.65, L * 0.15); geos.push(ws);
+  // console
+  box(0.5, 0.3, 0.4, 0, 0.35, L * 0.08);
+  // seats
+  box(0.4, 0.25, 0.35, 0.35, 0.3, -L * 0.1);
+  box(0.4, 0.25, 0.35, -0.35, 0.3, -L * 0.1);
+  // engine cowl (rear)
+  box(Wd * 0.5, 0.25, L * 0.18, 0, 0.3, -L * 0.38);
+  // headlight
+  const hl = new THREE.BoxGeometry(0.2, 0.1, 0.06); hl.translate(0, 0.5, L / 2 + 0.02);
+  // taillight
+  const tl = new THREE.BoxGeometry(Wd * 0.4, 0.08, 0.06); tl.translate(0, 0.35, -L / 2 - 0.02);
+  const merged = mergeGeometries(geos.map(g => { g.deleteAttribute('uv'); return g; }));
+  const res = { body: merged, cabin: null, trims: null, head: hl, tail: tl, frontH: 0.65, lightY: 0.5 };
+  geomCache.set(key, res);
+  return res;
+}
+
 const wheelGeo = (() => {
   const tire = new THREE.CylinderGeometry(1, 1, 0.28, 20); tire.rotateZ(Math.PI / 2);
   const rim = new THREE.CylinderGeometry(0.66, 0.66, 0.3, 10); rim.rotateZ(Math.PI / 2);
@@ -140,26 +241,33 @@ export class Vehicle {
     this.mesh.rotation.order = 'YXZ';
     this.body = new THREE.Group();
     this.mesh.add(this.body);
-    const g = buildGeometry(typeKey, t);
+    const g = t.bike ? buildBikeGeometry(typeKey, t) : t.boat ? buildBoatGeometry(typeKey, t) : buildGeometry(typeKey, t);
     this.paint = paintMaterial(this.color);
     this.bodyMesh = new THREE.Mesh(g.body, this.paint);
-    this.cabinMesh = new THREE.Mesh(g.cabin, glassMat);
-    // roof panel in body color
-    const roofPts = t.cabin;
-    const roofH = Math.max(...roofPts.map((p) => p[1]));
-    const roofU = roofPts.filter((p) => p[1] === roofH).map((p) => p[0]);
-    const roofLen = (Math.max(...roofU) - Math.min(...roofU)) * t.L;
-    const roofZ = ((Math.max(...roofU) + Math.min(...roofU)) / 2 - 0.5) * t.L;
-    this.roof = new THREE.Mesh(new THREE.BoxGeometry(t.Wd - 0.3, 0.05, roofLen + 0.05), this.paint);
-    this.roof.position.set(0, roofH + 0.06, roofZ);
-    this.trimMesh = new THREE.Mesh(g.trims, trimMat);
-    this.headMesh = new THREE.Mesh(g.head, headMat);
+    let roofH = g.frontH;
+    let roofZ = 0;
+    if (t.bike || t.boat) {
+      this.cabinMesh = new THREE.Object3D();
+      this.roof = new THREE.Object3D();
+      this.trimMesh = new THREE.Object3D();
+    } else {
+      this.cabinMesh = new THREE.Mesh(g.cabin, glassMat);
+      const roofPts = t.cabin;
+      roofH = Math.max(...roofPts.map((p) => p[1]));
+      const roofU = roofPts.filter((p) => p[1] === roofH).map((p) => p[0]);
+      const roofLen = (Math.max(...roofU) - Math.min(...roofU)) * t.L;
+      roofZ = ((Math.max(...roofU) + Math.min(...roofU)) / 2 - 0.5) * t.L;
+      this.roof = new THREE.Mesh(new THREE.BoxGeometry(t.Wd - 0.3, 0.05, roofLen + 0.05), this.paint);
+      this.roof.position.set(0, roofH + 0.06, roofZ);
+      this.trimMesh = new THREE.Mesh(g.trims, trimMat);
+    }
+    this.headMesh = g.head ? new THREE.Mesh(g.head, headMat) : new THREE.Object3D();
     this.tailMat = tailBase.clone();
-    this.tailMesh = new THREE.Mesh(g.tail, this.tailMat);
+    this.tailMesh = g.tail ? new THREE.Mesh(g.tail, this.tailMat) : new THREE.Object3D();
     this.body.add(this.bodyMesh, this.cabinMesh, this.roof, this.trimMesh, this.headMesh, this.tailMesh);
     this.roofY = roofH;
     this.H = roofH + 0.1;
-    for (const m of [this.bodyMesh, this.cabinMesh, this.roof]) { m.castShadow = true; m.receiveShadow = true; }
+    for (const m of [this.bodyMesh, this.cabinMesh, this.roof]) { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } }
 
     if (t.police) {
       // white doors / livery
@@ -184,20 +292,39 @@ export class Vehicle {
     }
     // wheels
     this.wheels = [];
-    const wr = t.wr;
-    const zf = (t.wf - 0.5) * t.L, zr = (t.wb - 0.5) * t.L;
-    for (const [x, z, front] of [[1, zf, true], [-1, zf, true], [1, zr, false], [-1, zr, false]]) {
-      const pivot = new THREE.Group();
-      pivot.position.set(x * (t.Wd / 2 - 0.12), wr, z);
-      const spin = new THREE.Group();
-      const tire = new THREE.Mesh(wheelGeo.tire, tireMat); tire.scale.set(1, wr, wr);
-      const rim = new THREE.Mesh(wheelGeo.rim, rimMat); rim.scale.set(1, wr, wr);
-      tire.castShadow = true;
-      spin.add(tire, rim); pivot.add(spin);
-      this.mesh.add(pivot);
-      this.wheels.push({ pivot, spin, front });
+    if (t.bike) {
+      const wr = t.wr;
+      const zf = (t.wf - 0.5) * t.L, zr = (t.wb - 0.5) * t.L;
+      for (const [z, front] of [[zf, true], [zr, false]]) {
+        const pivot = new THREE.Group();
+        pivot.position.set(0, wr, z);
+        const spin = new THREE.Group();
+        const tire = new THREE.Mesh(wheelGeo.tire, tireMat); tire.scale.set(0.5, wr, wr);
+        const rim = new THREE.Mesh(wheelGeo.rim, rimMat); rim.scale.set(0.5, wr, wr);
+        tire.castShadow = true;
+        spin.add(tire, rim); pivot.add(spin);
+        this.mesh.add(pivot);
+        this.wheels.push({ pivot, spin, front });
+      }
+      this.wheelBase = Math.abs(zf - zr);
+    } else if (t.boat) {
+      this.wheelBase = t.L * 0.6;
+    } else {
+      const wr = t.wr;
+      const zf = (t.wf - 0.5) * t.L, zr = (t.wb - 0.5) * t.L;
+      for (const [x, z, front] of [[1, zf, true], [-1, zf, true], [1, zr, false], [-1, zr, false]]) {
+        const pivot = new THREE.Group();
+        pivot.position.set(x * (t.Wd / 2 - 0.12), wr, z);
+        const spin = new THREE.Group();
+        const tire = new THREE.Mesh(wheelGeo.tire, tireMat); tire.scale.set(1, wr, wr);
+        const rim = new THREE.Mesh(wheelGeo.rim, rimMat); rim.scale.set(1, wr, wr);
+        tire.castShadow = true;
+        spin.add(tire, rim); pivot.add(spin);
+        this.mesh.add(pivot);
+        this.wheels.push({ pivot, spin, front });
+      }
+      this.wheelBase = Math.abs(zf - zr);
     }
-    this.wheelBase = Math.abs(zf - zr);
     // underglow
     this.glow = new THREE.Mesh(new THREE.PlaneGeometry(t.Wd * 1.8, t.L * 1.3), new THREE.MeshBasicMaterial({ map: glowTex, color: 0xff00ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.glow.rotation.x = -Math.PI / 2; this.glow.position.y = 0.06; this.glow.visible = false;
@@ -231,10 +358,12 @@ export class Vehicle {
     if (color == null) { this.glow.visible = false; this.glowColor = null; return; }
     this.glow.visible = true; this.glow.material.color.set(color).multiplyScalar(2.5); this.glowColor = color;
   }
-  setColor(hex) { this.color = hex; this.paint = paintMaterial(hex); this.bodyMesh.material = this.paint; this.roof.material = this.paint; }
+  setColor(hex) { this.color = hex; this.paint = paintMaterial(hex); this.bodyMesh.material = this.paint; if (this.roof.material) this.roof.material = this.paint; }
 
   place(x, z, h) {
-    this.x = x; this.z = z; this.h = h; this.y = Math.max(0, groundHeight(x, z));
+    this.x = x; this.z = z; this.h = h;
+    if (this.t.boat && groundHeight(x, z) < -5) this.y = WATER_Y;
+    else this.y = Math.max(0, groundHeight(x, z));
     this.vx = this.vz = this.vy = 0; this.yawRate = 0;
     this.syncMesh();
   }
@@ -317,8 +446,12 @@ export class Vehicle {
     const rollT = clamp(this.yawRate * vF * 0.0035, -0.07, 0.07);
     this.pitch = damp(this.pitch, pitchT, 6, dt);
     this.roll = damp(this.roll, rollT, 6, dt);
+    if (t.bike) {
+      const leanT = clamp(-this.yawRate * Math.max(8, Math.abs(vF)) * 0.012, -0.5, 0.5);
+      this.roll = damp(this.roll, leanT, 8, dt);
+    }
     for (const w of this.wheels) {
-      w.spin.rotation.x += vF * dt / t.wr;
+      if (t.wr > 0) w.spin.rotation.x += vF * dt / t.wr;
       if (w.front) w.pivot.rotation.y = -this.steerVis;
     }
     // brake lights
@@ -339,6 +472,25 @@ export class Vehicle {
   integrateVertical(dt, vF) {
     const gh = groundHeight(this.x, this.z);
     const t = this.t;
+    if (t.boat) {
+      if (gh > -5) {
+        this.grounded = true;
+        this.y = Math.max(0, gh);
+        this.vx *= 1 - Math.min(1, dt * 3);
+        this.vz *= 1 - Math.min(1, dt * 3);
+        return;
+      }
+      this.grounded = true;
+      this.sinking = 0;
+      const waveY = WATER_Y + Math.sin(G.time * 1.2 + this.x * 0.3) * 0.15 + Math.cos(G.time * 0.8 + this.z * 0.2) * 0.1;
+      this.y = damp(this.y, waveY, 4, dt);
+      this.vy = 0;
+      const drag = 0.6 + Math.abs(vF) * 0.008;
+      this.vx *= 1 - Math.min(1, dt * drag * 0.3);
+      this.vz *= 1 - Math.min(1, dt * drag * 0.3);
+      this.gPitch = damp(this.gPitch || 0, Math.sin(G.time * 1.5 + this.x) * 0.03 + clamp(-(this.accel || 0) * 0.006, -0.08, 0.08), 4, dt);
+      return;
+    }
     if (gh < -10) {
       // over water
       this.grounded = false;
@@ -386,6 +538,7 @@ export class Vehicle {
   }
 
   collideStatic() {
+    if (this.t.boat && groundHeight(this.x, this.z) < -5) return;
     const o = this.obb;
     o.x = this.x; o.z = this.z; o.a = this.h;
     const r = this.t.L / 2 + 1;
@@ -445,7 +598,8 @@ export class Vehicle {
       this.smokeT = frac < 0.15 ? 0.05 : 0.12;
       const fx = Math.sin(this.h), fz = Math.cos(this.h);
       const hx = this.x + fx * this.t.L * 0.35, hz = this.z + fz * this.t.L * 0.35;
-      G.fx.smoke(hx, this.y + this.t.body[1][1] + 0.2, hz, frac < 0.15 ? 0.15 : 0.6, 1);
+      const smokeH = this.t.body ? this.t.body[1][1] : 0.6;
+      G.fx.smoke(hx, this.y + smokeH + 0.2, hz, frac < 0.15 ? 0.15 : 0.6, 1);
       if (this.burning > 0) G.fx.fire(hx, this.y + 0.9, hz);
     }
     if (this.burning > 0) {
@@ -457,8 +611,10 @@ export class Vehicle {
   explode() {
     if (this.dead) return;
     this.dead = true; this.hp = 0; this.burning = 0;
-    this.bodyMesh.material = burntMat; this.roof.material = burntMat;
-    this.headMesh.visible = false; this.tailMesh.visible = false; this.glow.visible = false;
+    this.bodyMesh.material = burntMat; if (this.roof.material) this.roof.material = burntMat;
+    if (this.headMesh.isMesh) this.headMesh.visible = false;
+    if (this.tailMesh.isMesh) this.tailMesh.visible = false;
+    this.glow.visible = false;
     this.vy = 7; this.grounded = false;
     this.yawRate = (Math.random() - 0.5) * 3;
     if (G.fx) G.fx.explosion(this.x, this.y + 1, this.z, 1.3);
@@ -479,9 +635,9 @@ export class Vehicle {
 
   dispose() {
     this.mesh.removeFromParent();
-    this.tailMat.dispose();
+    if (this.tailMat && this.tailMat.dispose) this.tailMat.dispose();
     if (this.sirenR) { this.sirenR.dispose(); this.sirenB.dispose(); }
-    this.glow.material.dispose();
+    if (this.glow && this.glow.material) this.glow.material.dispose();
   }
 }
 

@@ -8,7 +8,7 @@ export class AudioEngine {
   constructor() {
     this.ok = false;
     this.station = 1;
-    this.stations = ['关闭', '霓虹浪潮 FM', '棕榈热浪 106.5', '深夜低频 Radio'];
+    this.stations = ['关闭', '迈阿密浪潮 FM', '棕榈热浪 106.5', '深夜低频 Radio'];
   }
 
   init() {

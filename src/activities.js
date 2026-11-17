@@ -138,7 +138,7 @@ export class Activities {
   discount() { return 1 - Math.min(0.5, Math.floor(G.save.badges.length / 5) * 0.1); }
 
   openGunShop() {
-    this.openPanel('烈焰枪械店', () => {
+    this.openPanel('武器商店', () => {
       const d = this.discount();
       let h = d < 1 ? `<p>💎 徽章会员折扣 ${Math.round((1 - d) * 100)}%</p>` : '';
       for (const id of WEAPON_ORDER) {
@@ -159,20 +159,20 @@ export class Activities {
   openGarage() {
     const v = G.player.inVehicle;
     if (!v) return;
-    this.openPanel("老萨尔的车行", () => {
+    this.openPanel("戴尔车行", () => {
       const cost = Math.round((1 - v.hp / v.maxHp) * 600);
       let h = `<p>当前车辆：<b>${v.t.name}</b> · 车况 ${Math.round(v.hp / v.maxHp * 100)}%</p>`;
       h += `<div class="shop-item"><div><b>🔧 修理</b></div><button class="mbtn small" data-act="repair">${fmtMoney(cost)}</button></div>`;
       if (G.police.level > 0) h += `<div class="shop-item"><div><b>🎨 喷漆换牌（清除通缉）</b><div class="desc">${G.police.level} 星通缉</div></div><button class="mbtn small" data-act="clearwanted">${fmtMoney(250 * G.police.level)}</button></div>`;
       h += '<h3>车漆（$150）</h3><div class="swatches">' + PAINTS.map((c) => `<div class="swatch" style="background:#${c.toString(16).padStart(6, '0')}" data-act="paint" data-arg="${c}"></div>`).join('') + '</div>';
-      h += '<h3>霓虹底盘灯（$800）</h3><div class="swatches">' + GLOWS.map((c) => `<div class="swatch" style="background:${c === null ? 'repeating-linear-gradient(45deg,#333,#333 4px,#555 4px,#555 8px)' : '#' + c.toString(16).padStart(6, '0')};box-shadow:0 0 10px ${c === null ? 'transparent' : '#' + c.toString(16).padStart(6, '0')}" data-act="glow" data-arg="${c}"></div>`).join('') + '</div>';
+      h += '<h3>底盘氛围灯（$800）</h3><div class="swatches">' + GLOWS.map((c) => `<div class="swatch" style="background:${c === null ? 'repeating-linear-gradient(45deg,#333,#333 4px,#555 4px,#555 8px)' : '#' + c.toString(16).padStart(6, '0')};box-shadow:0 0 10px ${c === null ? 'transparent' : '#' + c.toString(16).padStart(6, '0')}" data-act="glow" data-arg="${c}"></div>`).join('') + '</div>';
       h += '<h3>性能改装</h3>';
       const lv = v.powerMul > 1.25 ? 3 : v.powerMul > 1.1 ? 2 : v.powerMul > 1 ? 1 : 0;
       h += `<div class="shop-item"><div><b>⚙️ 引擎调校 Lv.${lv}/3</b><div class="desc">+12% 动力与极速</div></div>${lv < 3 ? `<button class="mbtn small" data-act="engine">${fmtMoney(2000 + lv * 1500)}</button>` : '已满级'}</div>`;
       h += `<div class="shop-item"><div><b>🛡️ 装甲车身</b><div class="desc">车身耐久 +60%</div></div>${v.armored ? '已安装' : `<button class="mbtn small" data-act="carmor">${fmtMoney(2500)}</button>`}</div>`;
       h += `<div class="shop-item"><div><b>🔥 氮气加速套件</b><div class="desc">Shift 释放 · 漂移可补充</div></div>${v.nitroMax > 0 ? '已安装' : `<button class="mbtn small" data-act="nitro">${fmtMoney(G.save.unlocked.nitro ? 0 : 4000)}</button>`}</div>`;
       h += `<div class="shop-item"><div><b>💾 停入安全屋车库</b><div class="desc">以后会停在安全屋门口</div></div><button class="mbtn small" data-act="savecar">免费</button></div>`;
-      if (G.save.unlocked.supercar) h += `<div class="shop-item"><div><b>⚡ 提取「闪电 SX」超跑</b><div class="desc">夜赛冠军奖励</div></div><button class="mbtn small" data-act="getsuper">免费</button></div>`;
+      if (G.save.unlocked.supercar) h += `<div class="shop-item"><div><b>⚡ 提取 Superlative 超跑</b><div class="desc">夜赛冠军奖励</div></div><button class="mbtn small" data-act="getsuper">免费</button></div>`;
       return h;
     });
   }
@@ -183,7 +183,7 @@ export class Activities {
       case 'weapon': { const w = WEAPONS[arg]; if (this.buy(Math.round(w.price * d))) { pl.giveWeapon(arg, w.ammoPack); G.hud.notify(`购买了 ${w.name}`); } break; }
       case 'ammo': { const w = WEAPONS[arg]; if (this.buy(Math.round(w.ammoPrice * d))) { G.save.ammo[arg] = (G.save.ammo[arg] || 0) + w.ammoPack; if (!pl.mag[arg]) pl.mag[arg] = Math.min(w.mag, G.save.ammo[arg]); G.hud.weapon(); } break; }
       case 'armor': if (pl.char.armor < 100 && this.buy(Math.round(400 * d))) pl.char.armor = 100; break;
-      case 'repair': { const c = Math.round((1 - v.hp / v.maxHp) * 600); if (this.buy(c)) { v.hp = v.maxHp; v.burning = 0; } break; }
+      case 'repair': { const c = Math.round((1 - v.hp / v.maxHp) * 600); if (this.buy(c)) { v.hp = v.maxHp; v.burning = 0; G.save.stats.repairCount = (G.save.stats.repairCount || 0) + 1; } break; }
       case 'clearwanted': if (this.buy(250 * G.police.level)) { G.police.setLevel(0); G.hud.notify('换了车漆和车牌，警察认不出你了'); G.events.emit('wantedCleared'); } break;
       case 'paint': if (this.buy(150)) { v.setColor(+arg); } break;
       case 'glow': if (this.buy(800)) { v.setGlow(arg === 'null' ? null : +arg); } break;
@@ -207,7 +207,7 @@ export class Activities {
 
   hospital() {
     const pl = G.player;
-    if (pl.char.hp >= 100) { G.hud.notify('圣玛丽医院：你很健康。'); return; }
+    if (pl.char.hp >= 100) { G.hud.notify('迈阿密医院：你很健康。'); return; }
     if (G.save.money >= 100) { G.save.money -= 100; pl.char.hp = 100; G.hud.notify('医生帮你包扎好了伤口（-$100）'); G.audio.ui('pickup'); }
   }
 
@@ -280,7 +280,7 @@ export class Activities {
         T.distance = dist(lp.x, lp.z, v.x, v.z);
         T.timer = 20 + T.distance / 11;
         G.audio.ui('checkpoint');
-        G.hud.subtitle(pick(['<b>乘客</b>：去这儿，快点！', '<b>乘客</b>：我赶飞机……开玩笑的，没机场。快走！', '<b>乘客</b>：别开太猛，我刚吃完海鲜。', '<b>乘客</b>：老兄，放点音乐？', '<b>乘客</b>：听说珊瑚帮最近很嚣张啊。']), 3);
+        G.hud.subtitle(pick(['<b>乘客</b>：去这儿，快点！', '<b>乘客</b>：我赶飞机……快走！', '<b>乘客</b>：别开太猛，我刚吃完海鲜。', '<b>乘客</b>：老兄，放点音乐？', '<b>乘客</b>：迈阿密的天气真好啊。']), 3);
         G.hud.objective('把乘客送到目的地');
       }
     } else if (T.state === 'drop') {

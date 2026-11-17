@@ -315,6 +315,7 @@ export const OUTFITS = {
   gang: { skin: 0xc68642, shirt: 0xc0392b, pants: 0x111111, hair: 0x111111, shoes: 0x111111, hairStyle: 3, build: 1.06, height: 1.0, glasses: false, hat: null, sleeves: false },
   boss: { skin: 0xe0ac69, shirt: 0x111111, jacket: 0xf4f4f4, longSleeves: true, pants: 0xf4f4f4, hair: 0x3b2a1a, shoes: 0x111111, hairStyle: 1, build: 1.1, height: 1.04, glasses: true, sleeves: true },
   sal: { skin: 0xc68642, shirt: 0xff9f1c, pants: 0x3d5a80, hair: 0x999999, shoes: 0x8b5a2b, hairStyle: 3, build: 1.2, height: 0.98, glasses: false, hat: 0xffffff, sleeves: true },
+  betty: { skin: 0xd4a574, shirt: 0xcc3366, pants: 0x222244, hair: 0x1a1a2e, shoes: 0x333333, hairStyle: 1, build: 0.92, height: 0.96, glasses: false, hat: null, sleeves: true },
 };
 export function gangOutfit() {
   const o = { ...OUTFITS.gang };

@@ -4,18 +4,18 @@ import { DISTRICT, DISTRICT_NAME, blockDistrict, blockCenter, NX, NZ, P } from '
 import { clamp, rand, pick } from './util.js';
 
 const GANGS = [
-  { id: 'sharks', name: '鲨鱼帮', color: 0x2e86ab, css: '#2e86ab' },
-  { id: 'vipers', name: '毒蛇帮', color: 0x3dff7a, css: '#3dff7a' },
-  { id: 'kings', name: '国王帮', color: 0xe0c341, css: '#e0c341' },
-  { id: 'reapers', name: '死神帮', color: 0xd7263d, css: '#d7263d' },
+  { id: 'armada', name: '阿马达帮', color: 0xd7263d, css: '#d7263d' },
+  { id: 'swamp', name: '沼泽帮', color: 0x3dff7a, css: '#3dff7a' },
+  { id: 'beach', name: '海滩帮', color: 0x2e86ab, css: '#2e86ab' },
+  { id: 'street', name: '街头帮', color: 0xe0c341, css: '#e0c341' },
 ];
 
 const TURF_DISTRICTS = [
-  { district: DISTRICT.PORT, gang: 'sharks', blocks: [] },
+  { district: DISTRICT.PORT, gang: 'armada', blocks: [] },
   { district: DISTRICT.DOWNTOWN, gang: null, blocks: [] },
-  { district: DISTRICT.MIDTOWN, gang: 'vipers', blocks: [] },
-  { district: DISTRICT.RESIDENTIAL, gang: 'kings', blocks: [] },
-  { district: DISTRICT.DECO, gang: 'reapers', blocks: [] },
+  { district: DISTRICT.MIDTOWN, gang: 'street', blocks: [] },
+  { district: DISTRICT.RESIDENTIAL, gang: 'swamp', blocks: [] },
+  { district: DISTRICT.DECO, gang: 'beach', blocks: [] },
   { district: DISTRICT.PARK, gang: null, blocks: [] },
 ];
 

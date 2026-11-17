@@ -1,4 +1,4 @@
-// 霓虹港湾：街头之王 — entry point / game loop.
+// 孤胆车神：雄霸迈阿密 — entry point / game loop.
 import * as THREE from 'three';
 import { G, defaultSave } from './state.js';
 import { Gfx } from './gfx.js';
@@ -24,7 +24,7 @@ import { shared } from './materials.js';
 import { CITY, BEACH, P, CZ, groundHeight } from './layout.js';
 
 const $ = (id) => document.getElementById(id);
-const SAVE_KEY = 'neonharbor_save_v1', SET_KEY = 'neonharbor_settings_v1';
+const SAVE_KEY = 'gangstar_miami_save_v1', SET_KEY = 'gangstar_miami_settings_v1';
 
 // ---------------- persistence ----------------
 function loadSettings() {
@@ -60,7 +60,7 @@ async function boot() {
   G.hud = new HUD();
 
   const prog = (p, t) => { $('loadfill').style.width = p * 100 + '%'; $('loadtext').textContent = t; };
-  prog(0.02, '点亮霓虹灯…');
+  prog(0.02, '欢迎来到迈阿密…');
   await new Promise((r) => setTimeout(r, 30));
   G.sky = new Atmosphere(scene, G.renderer);
   G.world = new World(scene);
@@ -184,10 +184,10 @@ function startGame(fresh) {
   G.hud.weapon();
   G.hud.stars(0);
   if (fresh) {
-    setTimeout(() => G.hud.big('霓虹港湾', 'gold', '太阳湾 · 黄昏', 3.5), 300);
+    setTimeout(() => G.hud.big('孤胆车神', 'gold', '迈阿密 · 黄昏', 3.5), 300);
     G.hud.notify('跟随黄色光柱开始剧情任务 ★');
     G.hud.notify('按 M 打开地图 · Esc 暂停 · 详细操作见菜单');
-  } else G.hud.notify('欢迎回来，凯。');
+  } else G.hud.notify('欢迎回来，强尼。');
   G.input.wantLock = true;
   if (!G.input.touchMode) G.input.lock();
 }
@@ -374,7 +374,7 @@ function wirePhone() {
       let h = '<h3 style="color:var(--cyan);margin:0 0 8px">收藏品</h3>';
       h += `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1)"><span>🏄 冲浪板</span> <b style="color:#2ef2ff">${sb} / 15</b></div>`;
       h += `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1)"><span>🛞 特殊轮毂</span> <b style="color:#b44dff">${wh} / 15</b></div>`;
-      h += `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1)"><span>💎 霓虹徽章</span> <b style="color:#ff3fa4">${G.save.badges.length} / 25</b></div>`;
+      h += `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1)"><span>💎 隐藏徽章</span> <b style="color:#ff3366">${G.save.badges.length} / 25</b></div>`;
       if (sb >= 15) h += '<p style="color:#3dff7a;margin-top:8px">冲浪板全部收集！高速快艇已解锁！</p>';
       if (wh >= 15) h += '<p style="color:#3dff7a">轮毂全部收集！闪电涂装已解锁！</p>';
       detail.innerHTML = h;

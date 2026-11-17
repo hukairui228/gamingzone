@@ -7,56 +7,56 @@ import { paintMaterial, stdMat } from './materials.js';
 import { G } from './state.js';
 import { glowTexture } from './textures.js';
 
-// ---------------- vehicle catalogue (original designs) ----------------
+// ---------------- vehicle catalogue (based on Gangstar: Miami Vindication) ----------------
 const COMMON_COLORS = [0xd7263d, 0x1b998b, 0xf4f4f4, 0x111111, 0x2e86ab, 0xf18f01, 0x8c8c8c, 0x5b2a86, 0xe0c341, 0x2d6a4f, 0xc0c0c0, 0xff6fb5, 0x23395b];
 export const CAR_TYPES = {
   coupe: {
-    name: '旋风 GT', L: 4.4, Wd: 1.9, power: 21, top: 60, grip: 8.5, mass: 1300, hp: 900, wr: 0.34, wf: 0.8, wb: 0.19,
+    name: 'Tawny 40o', L: 4.4, Wd: 1.9, power: 21, top: 60, grip: 8.5, mass: 1300, hp: 900, wr: 0.34, wf: 0.8, wb: 0.19,
     body: [[0, .36], [0, .8], [.04, .86], [.25, .88], [.7, .8], [.92, .72], [1, .62], [1, .36], [.97, .28], [.03, .28]],
     cabin: [[.22, .86], [.38, 1.24], [.6, 1.24], [.74, .82]], colors: COMMON_COLORS, value: 900,
   },
   sedan: {
-    name: '科萨 轿车', L: 4.7, Wd: 1.86, power: 14, top: 47, grip: 7.2, mass: 1450, hp: 1000, wr: 0.34, wf: 0.8, wb: 0.19,
+    name: 'Grand Detour', L: 4.7, Wd: 1.86, power: 14, top: 47, grip: 7.2, mass: 1450, hp: 1000, wr: 0.34, wf: 0.8, wb: 0.19,
     body: [[0, .38], [0, .92], [.05, .98], [.24, 1.0], [.32, .98], [.75, .95], [.95, .85], [1, .72], [1, .38], [.97, .3], [.03, .3]],
     cabin: [[.24, .98], [.34, 1.45], [.66, 1.45], [.78, .95]], colors: COMMON_COLORS, value: 500,
   },
   muscle: {
-    name: '野牛 V8', L: 4.9, Wd: 1.96, power: 23, top: 57, grip: 6.4, mass: 1550, hp: 1100, wr: 0.37, wf: 0.8, wb: 0.18,
+    name: 'D340', L: 4.9, Wd: 1.96, power: 23, top: 57, grip: 6.4, mass: 1550, hp: 1100, wr: 0.37, wf: 0.8, wb: 0.18,
     body: [[0, .42], [0, .92], [.05, .97], [.3, .97], [.62, .94], [.97, .92], [1, .82], [1, .42], [.97, .32], [.03, .32]],
     cabin: [[.2, .96], [.32, 1.3], [.55, 1.3], [.66, .94]], colors: [0xd7263d, 0x111111, 0xf18f01, 0x2e86ab, 0xe0c341, 0x2d6a4f], value: 1100,
   },
   suv: {
-    name: '阿特拉斯 SUV', L: 4.8, Wd: 2.0, power: 15, top: 45, grip: 7, mass: 2100, hp: 1400, wr: 0.42, wf: 0.8, wb: 0.19,
+    name: 'Box ES', L: 4.8, Wd: 2.0, power: 15, top: 45, grip: 7, mass: 2100, hp: 1400, wr: 0.42, wf: 0.8, wb: 0.19,
     body: [[0, .52], [0, 1.12], [.03, 1.17], [.75, 1.14], [.95, 1.02], [1, .92], [1, .52], [.97, .44], [.03, .44]],
     cabin: [[.02, 1.14], [.05, 1.82], [.62, 1.82], [.76, 1.14]], colors: COMMON_COLORS, value: 800,
   },
   taxi: {
-    name: '海湾出租车', L: 4.7, Wd: 1.86, power: 15, top: 48, grip: 7.4, mass: 1450, hp: 1000, wr: 0.34, wf: 0.8, wb: 0.19,
+    name: '出租车', L: 4.7, Wd: 1.86, power: 15, top: 48, grip: 7.4, mass: 1450, hp: 1000, wr: 0.34, wf: 0.8, wb: 0.19,
     body: [[0, .38], [0, .92], [.05, .98], [.24, 1.0], [.32, .98], [.75, .95], [.95, .85], [1, .72], [1, .38], [.97, .3], [.03, .3]],
     cabin: [[.24, .98], [.34, 1.45], [.66, 1.45], [.78, .95]], colors: [0xffc300], taxi: true, value: 600,
   },
   police: {
-    name: '警用拦截车', L: 4.8, Wd: 1.9, power: 21, top: 58, grip: 8.6, mass: 1600, hp: 1300, wr: 0.35, wf: 0.8, wb: 0.19,
+    name: '警车', L: 4.8, Wd: 1.9, power: 21, top: 58, grip: 8.6, mass: 1600, hp: 1300, wr: 0.35, wf: 0.8, wb: 0.19,
     body: [[0, .38], [0, .92], [.05, .98], [.24, 1.0], [.32, .98], [.75, .95], [.95, .85], [1, .72], [1, .38], [.97, .3], [.03, .3]],
     cabin: [[.24, .98], [.34, 1.45], [.66, 1.45], [.78, .95]], colors: [0x101820], police: true, value: 1500,
   },
   pickup: {
-    name: '牧场皮卡', L: 5.2, Wd: 2.0, power: 15, top: 45, grip: 6.8, mass: 2000, hp: 1400, wr: 0.42, wf: 0.82, wb: 0.18,
+    name: 'Sorraia', L: 5.2, Wd: 2.0, power: 15, top: 45, grip: 6.8, mass: 2000, hp: 1400, wr: 0.42, wf: 0.82, wb: 0.18,
     body: [[0, .52], [0, 1.05], [.75, 1.05], [.95, .98], [1, .88], [1, .52], [.97, .44], [.03, .44]],
     cabin: [[.4, 1.05], [.44, 1.76], [.66, 1.76], [.76, 1.05]], colors: COMMON_COLORS, value: 600,
   },
   super: {
-    name: '闪电 SX', L: 4.5, Wd: 2.0, power: 31, top: 78, grip: 10.5, mass: 1350, hp: 900, wr: 0.36, wf: 0.8, wb: 0.18,
+    name: 'Superlative', L: 4.5, Wd: 2.0, power: 31, top: 78, grip: 10.5, mass: 1350, hp: 900, wr: 0.36, wf: 0.8, wb: 0.18,
     body: [[0, .34], [0, .74], [.05, .82], [.3, .84], [.62, .72], [.9, .56], [1, .46], [1, .3], [.97, .22], [.03, .22]],
     cabin: [[.25, .82], [.42, 1.13], [.56, 1.13], [.73, .7]], colors: [0xd7263d, 0xff6fb5, 0xe0c341, 0x2ef2ff, 0xffffff, 0x3dff7a, 0xff7a00], value: 3000,
   },
   van: {
-    name: '货运厢车', L: 5.3, Wd: 2.05, power: 11, top: 38, grip: 6.2, mass: 2600, hp: 1600, wr: 0.38, wf: 0.82, wb: 0.16,
+    name: '送货车', L: 5.3, Wd: 2.05, power: 11, top: 38, grip: 6.2, mass: 2600, hp: 1600, wr: 0.38, wf: 0.82, wb: 0.16,
     body: [[0, .46], [0, 2.15], [.78, 2.15], [.78, 1.2], [.97, 1.1], [1, .95], [1, .46], [.97, .38], [.03, .38]],
     cabin: [[.775, 1.18], [.775, 2.13], [.8, 2.13], [.93, 1.2]], colors: [0xf4f4f4, 0x8c8c8c, 0x2e86ab], value: 400,
   },
   ambulance: {
-    name: '急救车', L: 5.5, Wd: 2.1, power: 16, top: 50, grip: 7.0, mass: 2800, hp: 1800, wr: 0.4, wf: 0.82, wb: 0.16,
+    name: '救护车', L: 5.5, Wd: 2.1, power: 16, top: 50, grip: 7.0, mass: 2800, hp: 1800, wr: 0.4, wf: 0.82, wb: 0.16,
     body: [[0, .46], [0, 2.15], [.78, 2.15], [.78, 1.2], [.97, 1.1], [1, .95], [1, .46], [.97, .38], [.03, .38]],
     cabin: [[.775, 1.18], [.775, 2.13], [.8, 2.13], [.93, 1.2]], colors: [0xf4f4f4], ambulance: true, value: 800,
   },
@@ -66,32 +66,47 @@ export const CAR_TYPES = {
     cabin: [[.755, 1.28], [.755, 2.18], [.78, 2.18], [.92, 1.3]], colors: [0x4a5a4a], value: 2000,
   },
   motorcycle: {
-    name: '飞隼摩托', L: 2.2, Wd: 0.55, power: 18, top: 62, grip: 6.5, mass: 220, hp: 300,
+    name: 'Fat Damsel', L: 2.2, Wd: 0.55, power: 18, top: 62, grip: 6.5, mass: 220, hp: 300,
     wr: 0.34, wf: 0.85, wb: 0.15, bike: true,
     body: null, cabin: null, colors: [0xd7263d, 0x111111, 0x2e86ab, 0xf18f01, 0xff6fb5, 0x5b2a86, 0xf4f4f4], value: 1200,
   },
   sportbike: {
-    name: '闪电猎豹', L: 2.1, Wd: 0.5, power: 26, top: 78, grip: 7.5, mass: 190, hp: 250,
+    name: 'Yamakasi', L: 2.1, Wd: 0.5, power: 26, top: 78, grip: 7.5, mass: 190, hp: 250,
     wr: 0.33, wf: 0.86, wb: 0.14, bike: true,
     body: null, cabin: null, colors: [0xd7263d, 0x2ef2ff, 0xffd166, 0x3dff7a, 0xff3fa4], value: 3500,
   },
   dirtbike: {
-    name: '越野摩托', L: 2.0, Wd: 0.5, power: 15, top: 52, grip: 8, mass: 160, hp: 220,
+    name: 'Sanchez', L: 2.0, Wd: 0.5, power: 15, top: 52, grip: 8, mass: 160, hp: 220,
     wr: 0.38, wf: 0.84, wb: 0.16, bike: true,
     body: null, cabin: null, colors: [0xf18f01, 0xd7263d, 0x2e86ab, 0x3dff7a, 0xf4f4f4], value: 800,
   },
   jetski: {
-    name: '海鲨水摩', L: 2.8, Wd: 1.2, power: 16, top: 45, grip: 4, mass: 300, hp: 500,
+    name: 'Sea-Gar', L: 2.8, Wd: 1.2, power: 16, top: 45, grip: 4, mass: 300, hp: 500,
     wr: 0, wf: 0, wb: 0, boat: true,
     body: null, cabin: null, colors: [0xd7263d, 0x2ef2ff, 0xf4f4f4, 0xff6fb5], value: 1800,
   },
   speedboat: {
-    name: '碧波快艇', L: 7.0, Wd: 2.4, power: 22, top: 52, grip: 3.5, mass: 1200, hp: 1200,
+    name: 'Sea-Ride', L: 7.0, Wd: 2.4, power: 22, top: 52, grip: 3.5, mass: 1200, hp: 1200,
     wr: 0, wf: 0, wb: 0, boat: true,
     body: null, cabin: null, colors: [0xffffff, 0x2e86ab, 0xd7263d], value: 5000,
   },
+  hearse: {
+    name: '灵车', L: 5.4, Wd: 1.95, power: 11, top: 40, grip: 6.5, mass: 2200, hp: 1200, wr: 0.36, wf: 0.78, wb: 0.18,
+    body: [[0, .38], [0, .95], [.05, 1.0], [.22, 1.02], [.30, 1.0], [.78, .98], [.95, .88], [1, .72], [1, .38], [.97, .3], [.03, .3]],
+    cabin: [[.22, 1.0], [.32, 1.48], [.68, 1.48], [.80, .98]], colors: [0x111111, 0x1a1a2e], value: 300,
+  },
+  limo: {
+    name: 'Limousine', L: 6.2, Wd: 1.95, power: 13, top: 42, grip: 6.0, mass: 2500, hp: 1500, wr: 0.35, wf: 0.82, wb: 0.15,
+    body: [[0, .38], [0, .92], [.05, .98], [.20, 1.0], [.28, .98], [.80, .96], [.95, .86], [1, .72], [1, .38], [.97, .3], [.03, .3]],
+    cabin: [[.20, .98], [.30, 1.46], [.70, 1.46], [.82, .96]], colors: [0x111111, 0xf4f4f4], value: 2000,
+  },
+  homm: {
+    name: 'Homm', L: 5.2, Wd: 2.3, power: 18, top: 48, grip: 7.5, mass: 3000, hp: 2500, wr: 0.46, wf: 0.8, wb: 0.19,
+    body: [[0, .56], [0, 1.18], [.03, 1.24], [.78, 1.20], [.95, 1.08], [1, .96], [1, .56], [.97, .48], [.03, .48]],
+    cabin: [[.02, 1.20], [.05, 1.92], [.64, 1.92], [.78, 1.20]], colors: COMMON_COLORS, value: 2500,
+  },
 };
-export const TRAFFIC_MIX = ['sedan', 'sedan', 'sedan', 'coupe', 'suv', 'suv', 'taxi', 'taxi', 'pickup', 'van', 'muscle', 'coupe', 'super', 'motorcycle', 'motorcycle'];
+export const TRAFFIC_MIX = ['sedan', 'sedan', 'sedan', 'coupe', 'suv', 'suv', 'taxi', 'taxi', 'pickup', 'van', 'muscle', 'coupe', 'super', 'motorcycle', 'motorcycle', 'homm', 'limo', 'hearse'];
 
 // ---------------- shared materials ----------------
 const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x0c1218, metalness: 0.3, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.6 });

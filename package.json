@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "霓虹港湾：街头之王 — an original open-world crime action game for the browser (Three.js)",
+  "description": "孤胆车神：雄霸迈阿密 — open-world crime action game for the browser (Three.js)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

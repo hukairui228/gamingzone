@@ -1,4 +1,4 @@
-// Procedural construction of Solara Bay.
+// Procedural construction of Miami.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Water } from 'three/addons/objects/Water.js';
@@ -554,7 +554,7 @@ export class World {
       }
       case 'police': {
         this.midrise(cx, backZ + 4, 46, 22, 14, R, 0x3a4a6a);
-        this.sign('POLICE', '#2ef2ff', cx, CURB_H + 10, backZ + 15.2, 0, 14, 3.2, false, '太阳湾警局');
+        this.sign('POLICE', '#2ef2ff', cx, CURB_H + 10, backZ + 15.2, 0, 14, 3.2, false, '迈阿密警局');
         this.markers.police = { x: cx, z: backZ + 18, name: info.name };
         for (let k = 0; k < 4; k++) this.parkingSpots.push({ x: cx - 18 + k * 8, z: cz + 16, h: Math.PI, police: true });
         this.markers.policeLot = { x: cx, z: cz + 16 };

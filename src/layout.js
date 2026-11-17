@@ -1,4 +1,4 @@
-// City layout of Solara Bay (original fictional city). Pure data + queries, no rendering.
+// City layout of Miami (based on Gangstar: Miami Vindication). Pure data + queries, no rendering.
 import { hash2 } from './util.js';
 
 export const P = 90;          // block pitch (road center to road center)
@@ -19,29 +19,34 @@ export const WATER_Y = -0.9;
 export const WORLD_HALF = 3000;
 
 // ----- districts -----
-export const DISTRICT = { PORT: 0, DOWNTOWN: 1, MIDTOWN: 2, RESIDENTIAL: 3, DECO: 4, PARK: 5, SPECIAL: 6 };
-export const DISTRICT_NAME = ['集装箱码头', '金融中心', '中城', '棕榈住宅区', '海滨装饰艺术区', '日落公园', ''];
+export const DISTRICT = {
+  HARBOR: 0, DOWNTOWN: 1, LIL_HAITI: 2, COCO_GROVE: 3, SOUTH_BEACH: 4, COUNTRY: 5, SWAMP: 6, NORTH_BEACH: 7,
+  // backward-compat aliases used by world.js / hud.js / territories.js / peds.js
+  PORT: 0, MIDTOWN: 2, RESIDENTIAL: 5, DECO: 3, PARK: 6, SPECIAL: 8,
+};
+export const DISTRICT_NAME = ['港口区', '市中心', '小海地', '椰林区', '南海滩', '乡村区', '沼泽区', '北海滩', ''];
 
 // special named blocks: [i, j, id]
 export const SPECIAL = {
   safehouse: { i: 2, j: 9, name: '安全屋' },
-  garage: { i: 1, j: 5, name: '老萨尔的车行' },
-  gunshop: { i: 6, j: 7, name: '烈焰枪械店' },
-  hospital: { i: 3, j: 1, name: '圣玛丽医院' },
-  police: { i: 7, j: 3, name: '太阳湾警局' },
-  park: { i: 5, j: 9, name: '日落公园' },
-  park2: { i: 4, j: 9, name: '日落公园' },
-  plaza: { i: 4, j: 4, name: '市政广场' },
+  garage: { i: 1, j: 5, name: '戴尔车行' },
+  gunshop: { i: 6, j: 7, name: '武器商店' },
+  hospital: { i: 3, j: 1, name: '迈阿密医院' },
+  police: { i: 7, j: 3, name: '迈阿密警局' },
+  park: { i: 5, j: 9, name: '沼泽地' },
+  park2: { i: 4, j: 9, name: '沼泽地' },
+  plaza: { i: 4, j: 4, name: '市中心广场' },
 };
 
 export function blockDistrict(i, j) {
   if (i < 0 || j < 0 || i >= NX || j >= NZ) return -1;
-  if ((i === 5 || i === 4) && j === 9) return DISTRICT.PARK;
-  if (i === 0) return DISTRICT.PORT;
-  if (i >= NX - 2) return DISTRICT.DECO;
+  if ((i === 5 || i === 4) && j === 9) return DISTRICT.SWAMP;
+  if (i === 0) return DISTRICT.HARBOR;
+  if (i >= NX - 2) return DISTRICT.COCO_GROVE;
+  if (j >= 9) return DISTRICT.COUNTRY;
   if (i >= 3 && i <= 6 && j >= 2 && j <= 6) return DISTRICT.DOWNTOWN;
-  if (j >= 8) return DISTRICT.RESIDENTIAL;
-  return DISTRICT.MIDTOWN;
+  if (i >= 1 && i <= 3 && j <= 3) return DISTRICT.LIL_HAITI;
+  return DISTRICT.LIL_HAITI;
 }
 
 export function specialAt(i, j) {
@@ -57,8 +62,8 @@ export function blockCenter(i, j) { return { x: i * P + P / 2, z: j * P + P / 2 
 
 export function zoneName(x, z) {
   if (inRect(x, z, ISLAND) || inRect(x, z, CAUSEWAY) && x > BEACH.x1) return '珊瑚岛';
-  if (inRect(x, z, BEACH)) return '日落海滩';
-  if (x < 0) return DISTRICT_NAME[0];
+  if (inRect(x, z, BEACH)) return z < CZ ? '南海滩' : '北海滩';
+  if (x < 0) return DISTRICT_NAME[DISTRICT.HARBOR];
   const i = Math.floor(x / P), j = Math.floor(z / P);
   const d = blockDistrict(Math.min(NX - 1, Math.max(0, i)), Math.min(NZ - 1, Math.max(0, j)));
   return DISTRICT_NAME[d] ?? '';

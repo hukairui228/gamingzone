@@ -34,7 +34,7 @@ export function defaultSave() {
     stats: { kills: 0, carsStolen: 0, distance: 0, bestDrift: 0, maxWanted: 0, taxiFares: 0, racesWon: 0, playTime: 0, deaths: 0, busted: 0,
       civKills: 0, copsKilled: 0, carsDestroyed: 0, drifts: 0, peopleBurnt: 0, totalEarned: 0,
       distanceCar: 0, distanceFoot: 0, distanceWater: 0, taxiTrips: 0, ambulanceTrips: 0, deliveryTrips: 0,
-      longestJump: 0, longestWheelie: 0, vehiclesDriven: {} },
+      longestJump: 0, longestWheelie: 0, repairCount: 0, vehiclesDriven: {} },
     achievements: [],
     territories: null,
     properties: [],

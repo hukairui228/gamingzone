@@ -1,4 +1,4 @@
-// World markers (light beams) and pickups (money, weapons, health, armor, neon badges).
+// World markers (light beams) and pickups (money, weapons, health, armor, hidden badges).
 import * as THREE from 'three';
 import { G } from './state.js';
 import { groundHeight, P, NX, NZ } from './layout.js';
@@ -156,9 +156,9 @@ export class Pickups {
         G.save.badges.push(it.id);
         G.audio.ui('badge');
         G.addMoney(250);
-        G.hud.notify(`💎 霓虹徽章 ${G.save.badges.length} / 25`);
-        if (G.save.badges.length === 25) { G.hud.big('全部徽章收集完成！', 'gold', '奖励：防弹衣无限补给 + $25,000', 5); G.addMoney(25000); }
-        else if (G.save.badges.length % 5 === 0) { G.hud.notify('🎁 每收集 5 枚徽章，枪械店给你打折 10%'); }
+        G.hud.notify(`💎 秘密道具 ${G.save.badges.length} / 25`);
+        if (G.save.badges.length === 25) { G.hud.big('全部秘密道具收集完成！', 'gold', '奖励：防弹衣无限补给 + $25,000', 5); G.addMoney(25000); }
+        else if (G.save.badges.length % 5 === 0) { G.hud.notify('🎁 每收集 5 个秘密道具，武器店打折 10%'); }
         G.persist();
         return true;
       case 'surfboard':
@@ -167,7 +167,7 @@ export class Pickups {
         G.audio.ui('badge');
         G.addMoney(500);
         G.hud.notify(`🏄 冲浪板 ${G.save.surfboards.length} / 15`);
-        if (G.save.surfboards.length === 15) { G.hud.big('冲浪板全部收集！', 'gold', '解锁高速快艇「海浪骑士」', 5); G.addMoney(15000); }
+        if (G.save.surfboards.length === 15) { G.hud.big('冲浪板全部收集！', 'gold', '解锁高速快艇 Sea-Ride', 5); G.addMoney(15000); }
         G.persist();
         return true;
       case 'wheel':
@@ -176,7 +176,7 @@ export class Pickups {
         G.audio.ui('badge');
         G.addMoney(500);
         G.hud.notify(`🛞 特殊轮毂 ${G.save.wheels.length} / 15`);
-        if (G.save.wheels.length === 15) { G.hud.big('轮毂全部收集！', 'gold', '解锁特殊改装「闪电涂装」', 5); G.addMoney(15000); }
+        if (G.save.wheels.length === 15) { G.hud.big('轮毂全部收集！', 'gold', '解锁特殊车辆 W4C-H', 5); G.addMoney(15000); }
         G.persist();
         return true;
       case 'briefcase': G.events.emit('briefcase'); break;

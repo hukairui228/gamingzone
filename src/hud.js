@@ -386,8 +386,8 @@ ${r('C', '切换镜头')}${r('V', '回头看')}${r('左键', '驾车射击（手
 <h3>玩法提示</h3>
 <p>· 黄色光柱是剧情任务，跟随小地图上的黄色 GPS 路线。<br>
 · 用手刹甩尾漂移可以累积连击分数，漂移结束后兑换现金并补充氮气。<br>
-· 城市里藏着 25 枚霓虹徽章，还有 6 个特技跳台等你挑战。<br>
-· 被通缉时，躲开警察视线一段时间即可脱身；也可以开进萨尔车行喷漆。<br>
+· 城市里藏着 25 枚隐藏徽章，还有 6 个特技跳台等你挑战。<br>
+· 被通缉时，躲开警察视线一段时间即可脱身；也可以开进修车行喷漆。<br>
 · 手柄与触屏均支持。</p>`;
   }
   statsHTML() {
@@ -397,7 +397,7 @@ ${r('C', '切换镜头')}${r('V', '回头看')}${r('左键', '驾车射击（手
     let h = '<h3>剧情任务</h3>';
     ms.forEach((m, k) => { h += `<div class="statline ${k < G.save.mission ? 'mission-done' : ''}"><span>${k + 1}. ${m.title}</span><b>${k < G.save.mission ? '✔ 完成' : k === G.save.mission ? '进行中' : '🔒'}</b></div>`; });
     h += '<h3>统计</h3>';
-    h += line('游戏时长', `${Math.floor(s.playTime / 60)} 分钟`) + line('总资产', fmtMoney(G.save.money)) + line('霓虹徽章', `${G.save.badges.length} / 25`) +
+    h += line('游戏时长', `${Math.floor(s.playTime / 60)} 分钟`) + line('总资产', fmtMoney(G.save.money)) + line('隐藏徽章', `${G.save.badges.length} / 25`) +
       line('独特特技', `${G.save.stunts.length} / 6`) + line('击倒', s.kills) + line('抢车次数', s.carsStolen) + line('驾驶里程', (s.distance / 1000).toFixed(1) + ' km') +
       line('最高漂移', s.bestDrift.toLocaleString()) + line('最高通缉', '★'.repeat(s.maxWanted) || '-') + line('出租车收入', fmtMoney(s.taxiFares)) + line('街头赛胜场', s.racesWon) +
       line('阵亡', s.deaths) + line('被捕', s.busted);

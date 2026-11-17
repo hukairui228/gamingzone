@@ -1,35 +1,41 @@
-// Achievement/stats tracking inspired by Gangstar: Miami Vindication
+// Achievement/stats tracking — based on Gangstar: Miami Vindication original achievements
 import { G } from './state.js';
 
 const ACHIEVEMENTS = [
-  { id: 'ch1', name: '第一章', desc: '完成第一章', icon: '📖', check: () => G.save.mission >= 3 },
-  { id: 'ch2', name: '第二章', desc: '完成第二章', icon: '📖', check: () => G.save.mission >= 6 },
-  { id: 'ch3', name: '第三章', desc: '完成全部故事', icon: '📖', check: () => G.save.mission >= 9 },
-  { id: 'psycho', name: '疯狂杀手', desc: '杀死 10 名行人', icon: '💀', check: () => (G.save.stats.civKills || 0) >= 10 },
-  { id: 'serial', name: '连环杀手', desc: '累计击杀 100 人', icon: '☠️', check: () => G.save.stats.kills >= 100 },
-  { id: 'grinder', name: '绞肉机', desc: '累计击杀 500 人', icon: '🔥', check: () => G.save.stats.kills >= 500 },
-  { id: 'nra', name: '武器大师', desc: '拥有所有武器', icon: '🎯', check: () => { const w = G.save.weapons; return w.pistol && w.smg && w.shotgun && w.rifle && w.rocket && w.bat && w.flamethrower; } },
-  { id: 'pyro', name: '纵火犯', desc: '烧死 30 人', icon: '🔥', check: () => (G.save.stats.peopleBurnt || 0) >= 30 },
-  { id: 'bacon', name: '闻到培根味了', desc: '消灭 30 名警察', icon: '🥓', check: () => (G.save.stats.copsKilled || 0) >= 30 },
-  { id: 'carlover', name: '爱车一族', desc: '驾驶过 10 种不同的车', icon: '🚗', check: () => Object.keys(G.save.stats.vehiclesDriven || {}).length >= 10 },
-  { id: 'stuntman', name: '特技演员', desc: '完成 100 米的飞车跳跃', icon: '🏍️', check: () => (G.save.stats.longestJump || 0) >= 100 },
-  { id: 'wheelie', name: '翘头王', desc: '完成 50 米的翘头', icon: '🏍️', check: () => (G.save.stats.longestWheelie || 0) >= 50 },
-  { id: 'rubber', name: '橡胶味', desc: '漂移 30 次', icon: '🏎️', check: () => (G.save.stats.drifts || 0) >= 30 },
-  { id: 'thief', name: '偷车大盗', desc: '偷 30 辆车', icon: '🔑', check: () => G.save.stats.carsStolen >= 30 },
-  { id: 'breaker', name: '车辆终结者', desc: '摧毁 50 辆车', icon: '💥', check: () => (G.save.stats.carsDestroyed || 0) >= 50 },
-  { id: 'trust', name: '信托基金', desc: '累计赚到 $100,000', icon: '💰', check: () => (G.save.stats.totalEarned || 0) >= 100000 },
-  { id: 'ceo', name: '银行 CEO', desc: '累计赚到 $500,000', icon: '🏦', check: () => (G.save.stats.totalEarned || 0) >= 500000 },
-  { id: 'taxidriver', name: '出租车司机', desc: '完成 10 次出租车载客', icon: '🚕', check: () => (G.save.stats.taxiTrips || 0) >= 10 },
-  { id: 'medic', name: '急救员', desc: '完成 10 次救护车任务', icon: '🚑', check: () => (G.save.stats.ambulanceTrips || 0) >= 10 },
-  { id: 'delivery', name: '快递小哥', desc: '完成 10 次外卖配送', icon: '🍔', check: () => (G.save.stats.deliveryTrips || 0) >= 10 },
-  { id: 'racer', name: '赛车手', desc: '赢得 5 场街头赛', icon: '🏁', check: () => G.save.stats.racesWon >= 5 },
-  { id: 'badges', name: '徽章收藏家', desc: '收集全部霓虹徽章', icon: '💎', check: () => G.save.badges.length >= 25 },
-  { id: 'surf', name: '冲浪达人', desc: '收集全部冲浪板', icon: '🏄', check: () => (G.save.surfboards || []).length >= 15 },
-  { id: 'rims', name: '轮毂狂人', desc: '收集全部特殊轮毂', icon: '🛞', check: () => (G.save.wheels || []).length >= 15 },
-  { id: 'gangstar', name: '孤胆车神', desc: '达到 5 星通缉等级', icon: '⭐', check: () => G.save.stats.maxWanted >= 5 },
-  { id: 'sailor', name: '水手之心', desc: '驾船行驶 2 公里', icon: '⛵', check: () => (G.save.stats.distanceWater || 0) >= 2000 },
-  { id: 'hiker', name: '城市徒步者', desc: '步行 2 公里', icon: '🚶', check: () => (G.save.stats.distanceFoot || 0) >= 2000 },
-  { id: 'roadtrip', name: '公路旅行', desc: '驾车行驶 5 公里', icon: '🛣️', check: () => (G.save.stats.distanceCar || 0) >= 5000 },
+  // Story progress (original: 6 chapters, we have 5)
+  { id: 'ch1', name: '第1章', desc: '完成第1章', icon: '📖', check: () => G.save.mission >= 4 },
+  { id: 'ch2', name: '第2章', desc: '完成第2章', icon: '📖', check: () => G.save.mission >= 7 },
+  { id: 'ch3', name: '第3章', desc: '完成第3章', icon: '📖', check: () => G.save.mission >= 10 },
+  { id: 'ch4', name: '第4章', desc: '完成第4章', icon: '📖', check: () => G.save.mission >= 14 },
+  { id: 'ch5', name: '第5章', desc: '完成第5章', icon: '📖', check: () => G.save.mission >= 18 },
+  // Discovery (探索发现)
+  { id: 'gangstar', name: '美国黑帮', desc: '首次达到通缉等级5', icon: '⭐', check: () => G.save.stats.maxWanted >= 5 },
+  { id: 'nra', name: '武器会员', desc: '拥有全套武器', icon: '🎯', check: () => { const w = G.save.weapons; return w.pistol && w.smg && w.shotgun && w.rifle && w.sniper && w.rocket && w.bat && w.flamethrower; } },
+  { id: 'carlover', name: '汽车爱好者', desc: '将所有车辆都驾驶过至少一次', icon: '🚗', check: () => Object.keys(G.save.stats.vehiclesDriven || {}).length >= 14 },
+  // Performance (行为表现)
+  { id: 'stuntman', name: '替身演员', desc: '飞车达100米', icon: '🏍️', check: () => (G.save.stats.longestJump || 0) >= 100 },
+  { id: 'medic', name: '急救车！', desc: '将10名病人送到医院', icon: '🚑', check: () => (G.save.stats.ambulanceTrips || 0) >= 10 },
+  { id: 'taxidriver', name: '出租司机！', desc: '在一辆出租上载过10个人', icon: '🚕', check: () => (G.save.stats.taxiTrips || 0) >= 10 },
+  { id: 'delivery', name: '快餐宅急送！', desc: '给10人送餐', icon: '🍔', check: () => (G.save.stats.deliveryTrips || 0) >= 10 },
+  // Exploration (探索)
+  { id: 'surf', name: '海滨小子', desc: '全种类冲浪板收集', icon: '🏄', check: () => (G.save.surfboards || []).length >= 15 },
+  { id: 'rims', name: '集车大师', desc: '全种类车轮收集', icon: '🛞', check: () => (G.save.wheels || []).length >= 15 },
+  { id: 'badges', name: '秘密道具', desc: '收集全部隐藏道具', icon: '💎', check: () => G.save.badges.length >= 25 },
+  // Statistics (数学家)
+  { id: 'psycho', name: '变态杀手', desc: '杀死10名市民', icon: '💀', check: () => (G.save.stats.civKills || 0) >= 10 },
+  { id: 'reckless', name: '鲁莽驾驶', desc: '在修车铺修过10次车', icon: '🔧', check: () => (G.save.stats.repairCount || 0) >= 10 },
+  { id: 'thief', name: '汽车大盗', desc: '偷过30辆车', icon: '🔑', check: () => G.save.stats.carsStolen >= 30 },
+  { id: 'rubber', name: '橡胶气味', desc: '30次漂移', icon: '🏎️', check: () => (G.save.stats.drifts || 0) >= 30 },
+  { id: 'serial', name: '连续杀人犯', desc: '总共杀死100个人', icon: '☠️', check: () => G.save.stats.kills >= 100 },
+  { id: 'breaker', name: '毁车狂', desc: '破坏50辆汽车', icon: '💥', check: () => (G.save.stats.carsDestroyed || 0) >= 50 },
+  { id: 'grinder', name: '绞肉机', desc: '总共杀死500个人', icon: '🔥', check: () => G.save.stats.kills >= 500 },
+  { id: 'trust', name: '中产阶级', desc: '拥有100000美元', icon: '💰', check: () => (G.save.stats.totalEarned || 0) >= 100000 },
+  { id: 'ceo', name: '大富翁', desc: '拥有500000美元', icon: '🏦', check: () => (G.save.stats.totalEarned || 0) >= 500000 },
+  { id: 'bacon', name: '警察猎手', desc: '杀死30名警察', icon: '🥓', check: () => (G.save.stats.copsKilled || 0) >= 30 },
+  // Misc
+  { id: 'racer', name: '赛车手', desc: '赢得5场街头赛', icon: '🏁', check: () => G.save.stats.racesWon >= 5 },
+  { id: 'sailor', name: '水手之心', desc: '驾船行驶2公里', icon: '⛵', check: () => (G.save.stats.distanceWater || 0) >= 2000 },
+  { id: 'roadtrip', name: '公路旅行', desc: '驾车行驶5公里', icon: '🛣️', check: () => (G.save.stats.distanceCar || 0) >= 5000 },
   { id: 'turf', name: '地盘之王', desc: '占领全部帮派地盘', icon: '👑', check: () => G.territories && G.territories.zones.every(z => !z.gang || z.captured) },
 ];
 

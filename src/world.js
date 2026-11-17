@@ -929,15 +929,15 @@ export class World {
     const geo = new THREE.PlaneGeometry(8000, 8000);
     this.water = new Water(geo, {
       textureWidth: 512, textureHeight: 512, waterNormals: waterNormals(),
-      sunDirection: new THREE.Vector3(0.7, 0.7, 0), sunColor: 0xffffff, waterColor: 0x0d4a5a, distortionScale: 2.4, fog: true,
+      sunDirection: new THREE.Vector3(0.7, 0.7, 0), sunColor: 0xffe0a0, waterColor: 0x004466, distortionScale: 2.8, fog: true,
     });
     this.water.rotation.x = -Math.PI / 2;
     this.water.position.y = WATER_Y;
-    this.water.material.uniforms.size.value = 6;
+    this.water.material.uniforms.size.value = 8;
     this.scene.add(this.water);
     // cheap fallback water for low quality
     const n = waterNormals(); n.repeat.set(400, 400);
-    this.waterLow = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x0d4a5a, roughness: 0.08, metalness: 0.4, normalMap: n, normalScale: new THREE.Vector2(0.4, 0.4) }));
+    this.waterLow = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x0d5a6a, roughness: 0.06, metalness: 0.45, normalMap: n, normalScale: new THREE.Vector2(0.5, 0.5) }));
     this.waterLow.rotation.x = -Math.PI / 2; this.waterLow.position.y = WATER_Y;
     this.waterLow.visible = false;
     this.scene.add(this.waterLow);
@@ -987,8 +987,10 @@ export class World {
       this.water.material.uniforms.time.value += dt * 0.6;
       const wu = this.water.material.uniforms;
       wu.sunDirection.value.copy(sunDir).y = Math.abs(sunDir.y);
-      wu.sunColor.value.copy(sunColor).multiplyScalar(1 - night * 0.85);
-      wu.waterColor.value.setRGB(0.05 * (1 - night) + 0.004, 0.29 * (1 - night) + 0.012, 0.35 * (1 - night) + 0.03);
+      wu.sunColor.value.copy(sunColor).multiplyScalar(1 - night * 0.75);
+      // deeper tropical ocean at day, dark navy at night
+      const dR = 0.0 * (1 - night) + 0.003, dG = 0.12 * (1 - night) + 0.008, dB = 0.24 * (1 - night) + 0.025;
+      wu.waterColor.value.setRGB(dR, dG, dB);
     }
     // neon intensity (lower during day)
     const ni = 0.35 + night * 0.8;

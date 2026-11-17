@@ -25,6 +25,7 @@ import { CITY, BEACH, P, CZ, groundHeight } from './layout.js';
 
 const $ = (id) => document.getElementById(id);
 const SAVE_KEY = 'gangstar_miami_save_v1', SET_KEY = 'gangstar_miami_settings_v1';
+const _sunProj = new THREE.Vector3();
 
 // ---------------- persistence ----------------
 function loadSettings() {
@@ -88,7 +89,7 @@ async function boot() {
   G.sky.update(0.016, G.hour, false, G.camera.position, null);
   G.world.update(0.016, 0, G.sky.night, G.sky.sunDir, G.sky.sunColor);
   try { G.renderer.compile(scene, G.camera); } catch (e) { /* ignore */ }
-  G.gfx.render(0.016, G.sky.night);
+  G.gfx.render(0.016, G.sky.night, null, 0);
   G.hud.buildMap();
   prog(1, '完成');
   setupMenus();
@@ -480,7 +481,13 @@ function loop(now) {
   gu.uFocus.value = lerp(gu.uFocus.value, pl && pl.focusOn ? 1 : 0, 1 - Math.exp(-rdt * 6));
   const v = pl && pl.inVehicle;
   gu.uBlur.value = lerp(gu.uBlur.value, v && v.nitroOn ? 1 : v ? clamp((v.speed - 30) / 40, 0, 0.4) : 0, 1 - Math.exp(-rdt * 4));
-  G.gfx.render(rdt, G.sky.night);
+  // sun screen-space position for god rays
+  _sunProj.copy(G.sky.sunDir).multiplyScalar(500).add(G.camera.position);
+  _sunProj.project(G.camera);
+  const sunOnScreen = _sunProj.z < 1; // in front of camera
+  const sunUV = sunOnScreen ? { x: _sunProj.x * 0.5 + 0.5, y: -_sunProj.y * 0.5 + 0.5 } : null;
+  const godRay = sunOnScreen ? clamp(G.sky.sunDir.y * 2.5, 0, 1) * (1 - G.sky.night) * (1 - G.sky.rain * 0.8) : 0;
+  G.gfx.render(rdt, G.sky.night, sunUV, godRay);
 }
 
 function simStep(dt, rdt) {

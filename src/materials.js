@@ -19,7 +19,7 @@ float fbm(vec2 p){ float a=0.5, s=0.; for(int i=0;i<4;i++){ s+=a*vnoise(p); p*=2
 // ---------- Building facade material ----------
 // attribute aFacade = (floorHeight, windowSpacing, style, seed)
 export function buildingMaterial() {
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.0, envMapIntensity: 1.0 });
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.0, envMapIntensity: 1.4 });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uNight = shared.uNight;
     sh.uniforms.uWet = shared.uWet;
@@ -98,7 +98,7 @@ function districtTexture() {
 
 export function groundMaterial() {
   const tiles = tileTexture();
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0 });
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.0, envMapIntensity: 1.3 });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uWet = shared.uWet;
     sh.uniforms.uNight = shared.uNight;
@@ -222,12 +222,23 @@ float rough = 0.9;
     rough = mix(rough, 0.6, mark);
     // patches & cracks
     gcol *= 0.9 + 0.12 * step(0.72, vnoise(p * 0.08));
+    // retroreflective road markings at night
+    totalEmissiveRadiance += mark * uNight * mc * 0.3;
   }
-  // wetness: darker + glossy, puddles
+  // micro surface detail — subtle height variation on hard surfaces
+  if (rough < 0.92) {
+    float micro = vnoise(p * 8.0) * 0.08 + vnoise(p * 24.0) * 0.03;
+    gcol *= 0.96 + micro;
+  }
+  // wetness: darker + glossy, puddles with sky reflection
   float puddle = smoothstep(0.55, 0.7, fbm(p * 0.07 + 3.0));
   float wet = uWet * (0.6 + 0.4 * puddle);
   gcol *= mix(1.0, 0.55, wet);
   rough = mix(rough, 0.05 + 0.15 * (1.0 - puddle), wet);
+  // fake sky reflection in puddles
+  vec3 skyRefl = mix(vec3(0.22, 0.32, 0.5), vec3(0.06, 0.04, 0.12), uNight);
+  skyRefl = mix(skyRefl, vec3(0.65, 0.4, 0.2), smoothstep(0.3, 0.8, 1.0 - uNight) * 0.3);
+  gcol = mix(gcol, skyRefl, puddle * wet * 0.45);
   diffuseColor.rgb = gcol;
 }
 `)
@@ -242,7 +253,7 @@ const paintCache = new Map();
 export function paintMaterial(hex) {
   let m = paintCache.get(hex);
   if (!m) {
-    m = new THREE.MeshPhysicalMaterial({ color: hex, metalness: 0.55, roughness: 0.32, clearcoat: 1.0, clearcoatRoughness: 0.06, envMapIntensity: 1.2 });
+    m = new THREE.MeshPhysicalMaterial({ color: hex, metalness: 0.6, roughness: 0.28, clearcoat: 1.0, clearcoatRoughness: 0.04, envMapIntensity: 1.5, sheen: 0.15, sheenColor: new THREE.Color(0xffffff) });
     paintCache.set(hex, m);
   }
   return m;

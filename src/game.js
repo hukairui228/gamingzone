@@ -572,6 +572,7 @@ export class Game {
     // free vehicles (crashed, parked, burning)
     for (const v of this.parked) {
       if (v === pl.vehicle || v.cop || v.mission) continue;
+      if (v.sunk) { v.pos.y -= dt * 0.8; v.root.position.y = v.pos.y; if (v.pos.y < -7) this.dropVehicle(v); continue; }
       if (v.speed > 0.2 || !v.onGround) v.update(dt, { throttle: 0, steer: 0, handbrake: true }, this.world);
       if (v.burnT > 0) { v.burnT -= dt; if (Math.random() < dt * 20) this.fx.smokeFrom(v.pos.x, v.pos.y + 1, v.pos.z, v.burnT > 5); }
       if (v.pos.distanceTo(this.focus) > 300 && !v.keep) this.dropVehicle(v);

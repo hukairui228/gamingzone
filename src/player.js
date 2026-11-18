@@ -77,7 +77,7 @@ export class Player {
   }
 
   showWeapon() {
-    for (const [k, m] of Object.entries(this.gunModels)) m.visible = k === this.weapon && !this.vehicle;
+    for (const [k, m] of Object.entries(this.gunModels)) m.visible = k === this.weapon && !this.vehicle && !this.swimming;
   }
 
   nextWeapon() {
@@ -154,10 +154,10 @@ export class Player {
     this.root.position.set(_v.x - _o.x, _v.y - _o.y + 0.08, _v.z - _o.z);
   }
 
-  exit() {
+  exit(force = false) {
     const g = this.g, v = this.vehicle;
     if (!v) return;
-    if (v.speed > 6) return;
+    if (v.speed > 6 && !force) return;
     v.root.updateMatrixWorld(true);
     this.root.getWorldPosition(_v);
     const left = _d.set(Math.cos(v.yaw), 0, -Math.sin(v.yaw)); // car's +X side (driver door)
@@ -191,7 +191,7 @@ export class Player {
       if (v) { this.enter(v); return; }
     }
     const w = WEAPONS[this.weapon];
-    const aiming = !w.melee && (ctl.aim || ctl.fire || g.input.isTouch && ctl.fire);
+    const aiming = !this.swimming && !w.melee && (ctl.aim || ctl.fire || g.input.isTouch && ctl.fire);
     // movement relative to camera
     const cy = cam.yaw;
     const fx = Math.sin(cy), fz = Math.cos(cy);
@@ -202,7 +202,7 @@ export class Player {
     const sprint = ctl.sprint && !aiming;
     // continuous speed from stick tilt: light tilt walks, full tilt runs (no sudden jump between gaits)
     const tilt = Math.min(1, ml);
-    const speed = !moving ? 0 : aiming ? 2.2 * tilt : sprint ? 7.2 : 1.3 + 3.3 * THREE.MathUtils.smoothstep(tilt, 0.3, 0.9);
+    const speed = !moving ? 0 : this.swimming ? 0.8 + 1.8 * tilt : aiming ? 2.2 * tilt : sprint ? 7.2 : 1.3 + 3.3 * THREE.MathUtils.smoothstep(tilt, 0.3, 0.9);
     if (moving) {
       this.pos.x += mx * speed * dt; this.pos.z += mz * speed * dt;
       if (!aiming) {
@@ -232,6 +232,7 @@ export class Player {
     if (gh === -Infinity) gh = g.world.height(this.pos.x, this.pos.z, this.pos.y + 0.5, 1.6);
     // a hole in the land mesh (not sea): walk over it
     if (gh === -Infinity && this.grounded && !g.world.isWater(this.pos.x, this.pos.z)) gh = this.pos.y;
+    if (this.swimming) { this.swim(dt, moving, mx, mz); this.c.update(dt); return; }
     if (ctl.jump && this.grounded && this.action <= 0) {
       this.vy = 5.2; this.grounded = false;
       this.c.play(speed > 3 ? 'fo__player__jump_run' : 'fo__player__jump_walk', { loop: false, fade: 0.1 });
@@ -240,7 +241,7 @@ export class Player {
     this.vy -= 18 * dt;
     this.pos.y += this.vy * dt;
     if (gh === -Infinity) {
-      if (this.pos.y < -0.6) this.swim(dt);
+      if (this.pos.y < -0.6) { this.swimming = true; this.showWeapon(); this.c.overlay(null); g.audio.play('sfx_jump', { vol: 0.3 }); }
     } else if (this.pos.y <= gh) {
       if (!this.grounded && this.vy < -11) { this.hurt((-this.vy - 11) * 6); this.c.play('fo__player__jumpdown_land_roll', { loop: false, fade: 0.05 }); this.action = 0.6; }
       this.pos.y = gh; this.vy = 0; this.grounded = true;
@@ -276,12 +277,35 @@ export class Player {
     this.c.update(dt);
   }
 
-  swim(dt) {
-    // original: drowning in deep water
-    this.pos.y = -1.1; this.vy = 0;
-    this.c.play('fl__player__swim_idle');
-    this.drownT = (this.drownT || 0) + dt;
-    if (this.drownT > 1.5) { this.g.audio.play('sfx_drown', { vol: 0.8 }); this.health = 0; this.g.die('drown'); this.drownT = 0; }
+  /** Swimming (original fl__player__swim clips): float at the surface, climb out where the bank is low enough. */
+  swim(dt, moving, mx, mz) {
+    const g = this.g;
+    this.pos.y += (-1.15 - this.pos.y) * Math.min(1, dt * 6); this.vy = 0; this.grounded = false;
+    if (this.action > 0) return;
+    this.c.play(moving ? 'fl__player__swim' : 'fl__player__swim_idle', { fade: 0.25 });
+    // reached shallow ground or a bank: climb out (fo__player__climb_from_water)
+    const fx = moving ? mx : Math.sin(this.yaw), fz = moving ? mz : Math.cos(this.yaw);
+    for (const d of [0, 0.7]) {
+      const x = this.pos.x + fx * d, z = this.pos.z + fz * d;
+      const h = g.world.height(x, z, 1.4, 0);
+      if (h > -0.9 && h < 1.4 && (d === 0 || moving)) {
+        this.swimming = false;
+        this.pos.set(x, h, z); this.vy = 0; this.grounded = true;
+        this.c.play('fo__player__climb_from_water', { loop: false, fade: 0.1 });
+        this.action = 0.8;
+        this.showWeapon();
+        return;
+      }
+    }
+  }
+
+  /** the car sank: get out and swim instead of going down with it */
+  bail(v) {
+    this.exit(true);
+    v.exploded = true; // no fireball under water
+    this.pos.y = -1.15;
+    this.swimming = true;
+    this.g.audio.play('sfx_jump', { vol: 0.4 });
   }
 
   runOver(v) {
@@ -383,6 +407,7 @@ export class Player {
     if (this.skidding) g.audio.setLoop('skid', skid ? Math.min(0.8, v.speed / 25) : 0);
     if (!skid) this.skidding = false;
     if (v.health <= 300) g.fx.smokeFrom(v.pos.x, v.pos.y + 1.2, v.pos.z + 0, v.health < 120);
+    if (v.sunk) { this.bail(v); return; }
     if (v.health <= 0 && !v.exploded) g.explodeVehicle(v);
     this.c.update(dt);
   }

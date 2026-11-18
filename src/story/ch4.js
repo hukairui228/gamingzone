@@ -51,13 +51,25 @@ export function findWater(g, x, z, clear = 12, maxR = 260) {
   return [x, z];
 }
 
+/** walkable street point near x,z (tries the preferred sidewalk, then the road, then the other side) */
+export function walkable(m, x, z, off = 1) {
+  for (const o of [off, 0, -off]) {
+    const r = road(m, x, z, o);
+    if (m.g.world.floor(r[0], r[1]) > -0.5) return r;
+  }
+  return road(m, x, z, 0);
+}
+
 /** leave a boat and step onto the nearest jetty / quay instead of the water */
 export async function disembark(m, text) {
   await m.exitVehicle(text);
   const g = m.g, p = g.player.pos;
   if (!(g.world.floor(p.x, p.z) > -0.5)) {
-    const [x, z] = road(m, p.x, p.z, 1);
-    g.placePlayer(x, z, g.player.yaw);
+    for (const off of [0, 1, -1]) {
+      const [x, z] = road(m, p.x, p.z, off);
+      if (g.world.floor(x, z) > -0.5) { g.placePlayer(x, z, g.player.yaw); return; }
+    }
+    g.placePlayer(SPOT.villa[0], SPOT.villa[1]);
   }
 }
 
@@ -78,7 +90,7 @@ export async function squad(m, models, x, z, opts = {}, spread = 10) {
   const out = [];
   for (let i = 0; i < models.length; i++) {
     const a = (i / models.length) * Math.PI * 2;
-    const [px, pz] = road(m, x + Math.cos(a) * spread, z + Math.sin(a) * spread, i % 2 ? 1 : -1);
+    const [px, pz] = walkable(m, x + Math.cos(a) * spread, z + Math.sin(a) * spread, i % 2 ? 1 : -1);
     const weapon = Array.isArray(opts.weapon) ? opts.weapon[i % opts.weapon.length] : opts.weapon;
     out.push(await m.spawnPed(models[i], px, pz, { ...opts, weapon, yaw: a + Math.PI }));
   }
@@ -185,7 +197,7 @@ export async function cast(m, list, x, z) {
   const out = {};
   let i = 0;
   for (const [name, model, sex] of list) {
-    const [px, pz] = road(m, x + 3 + i * 1.6, z + 2 - i, 1);
+    const [px, pz] = walkable(m, x + 3 + i * 1.6, z + 2 - i, 1);
     out[name] = await m.spawnPed(model, px, pz, { kind: 'ally', sex: sex || 'male', yaw: Math.PI });
     i++;
   }
@@ -212,14 +224,14 @@ export const CH4 = [
       m.objective(4);
       await m.say([['LC', 5, v()], ['乔伊', 6, v()], ['强尼', 7, v()], ['强尼', 8, v()], ['阿马达', 9, v()], ['强尼', 10, v()], ['阿马达', 11, v()], ['强尼', 12, v()]]);
       void fam;
-      const [bx, bz] = road(m, SPOT.betty[0], SPOT.betty[1], 1);
+      const [bx, bz] = walkable(m, SPOT.betty[0], SPOT.betty[1]);
       await m.goto(bx, bz, { r: 9, text: 13 });
       const va = voice('CH4_M_01_MIDDLE_A');
       await m.say([['强尼', 14, va()], ['贝蒂', 15, va()], ['强尼', 16, va()]]);
       await m.goto(vx, vz, { r: 12, text: 17 });
       const thugs = await squad(m, ARMADA.slice(0, 4), vx, vz, { hostile: true, weapon: ['beretta', 'uzi'] }, 14);
       await m.killAll(thugs, 18);
-      const betty = await m.spawnPed('char_betty', ...road(m, vx + 4, vz - 3, 1).slice(0, 2), { kind: 'ally', sex: 'female' });
+      const betty = await m.spawnPed('char_betty', ...walkable(m, vx + 4, vz - 3).slice(0, 2), { kind: 'ally', sex: 'female' });
       m.protect(betty, ['global', 327]);
       const vb = voice('CH4_M_01_MIDDLE_B');
       await m.say([['贝蒂', 19, vb()], ['强尼', 20, vb()], ['贝蒂', 21, vb()], ['强尼', 22, vb()], ['贝蒂', 23, vb()]]);
@@ -320,7 +332,7 @@ export const CH4 = [
       await destroy(m, vcars, 95);
       const vm = voice('CH4_M_04_MIDDLE');
       await m.say([['强尼', 96, vm()], ['强尼', 97, vm()]]);
-      const [dx, dz] = road(m, SPOT.dealer[0], SPOT.dealer[1], 1);
+      const [dx, dz] = walkable(m, SPOT.dealer[0], SPOT.dealer[1]);
       await m.goto(dx, dz, { r: 14, text: 98 });
       const lot = [];
       for (let i = 0; i < 4; i++) {
@@ -331,7 +343,7 @@ export const CH4 = [
       const guards = await squad(m, ['char_mafia_a', 'char_mafia_b', 'char_mafia_c'], dx, dz, { hostile: true, weapon: ['beretta', 'uzi'] }, 16);
       await m.killAll(guards, 100);
       await m.goto(dx, dz, { r: 8, text: 101 });
-      const [sx, sz] = road(m, dx + 3, dz + 2, 1);
+      const [sx, sz] = walkable(m, dx + 3, dz + 2);
       await m.spawnPed('char_cutscenes_male', sx, sz, { kind: 'civ', yaw: Math.PI });
       const ve = voice('CH4_M_04_END');
       await m.say([['车商', 102, ve()], ['强尼', 103, ve()], ['车商', 104, ve()], ['强尼', 105, ve()], ['车商', 106, ve()], ['强尼', 107, ve()]]);
@@ -361,7 +373,7 @@ export const CH4 = [
       const [bx, bz] = road(m, sx, sz);
       await m.goto(bx, bz, { r: 10, text: 122, vehicle: van });
       await m.exitVehicle();
-      const [px, pz] = road(m, sx + 2, sz + 2, 1);
+      const [px, pz] = walkable(m, sx + 2, sz + 2);
       await m.spawnPed('char_cutscenes_male', px, pz, { kind: 'civ' });
       const ve = voice('CH4_M_05_END');
       await m.say([['音响商', 123, ve()], ['强尼', 124, ve()], ['音响商', 125, ve()], ['强尼', 126, ve()], ['音响商', 127, ve()], ['音响商', 128, ve()], ['强尼', 129, ve()]]);
@@ -387,7 +399,7 @@ export const CH4 = [
       const d = driveTo(m, cruiser, road(m, 300, 250), 0.6);
       await destroy(m, [cruiser], 139, 260);
       d.stop();
-      const [wx, wz] = road(m, cruiser.pos.x + 2, cruiser.pos.z + 2, 1);
+      const [wx, wz] = walkable(m, cruiser.pos.x + 2, cruiser.pos.z + 2);
       const vega = await m.spawnPed('char_vega', wx, wz, { hostile: true, weapon: 'beretta', health: 120 });
       g.hud.notify(m.T(141), 2.5);
       await m.killAll([vega], 140);
@@ -402,9 +414,9 @@ export const CH4 = [
     giver: SPOT.villa,
     async run(m) {
       const g = m.g;
-      const [bx, bz] = road(m, SPOT.swamp[0], SPOT.swamp[1], 1);
+      const [bx, bz] = walkable(m, SPOT.swamp[0], SPOT.swamp[1]);
       await m.goto(bx, bz, { r: 10, text: 149 });
-      const betty = await m.spawnPed('char_betty', bx + 2, bz + 1.5, { kind: 'ally', sex: 'female', yaw: -Math.PI / 2 });
+      const betty = await m.spawnPed('char_betty', ...walkable(m, bx + 2, bz + 1.5).slice(0, 2), { kind: 'ally', sex: 'female', yaw: -Math.PI / 2 });
       m.protect(betty, ['global', 327]);
       const v = voice('CH4_M_07_INTRO');
       await m.say([['强尼', 150, v()], ['贝蒂', 151, v()], ['强尼', 152, v()], ['贝蒂', 153, v()], ['强尼', 154, v()], ['贝蒂', 155, v()],
@@ -420,7 +432,7 @@ export const CH4 = [
       await destroy(m, [spyBoat], 160, 400);
       stop();
       if (g.player.vehicle) await disembark(m);
-      const [sx, sz] = road(m, spyBoat.pos.x, spyBoat.pos.z, 1);
+      const [sx, sz] = walkable(m, spyBoat.pos.x, spyBoat.pos.z);
       const spy = await m.spawnPed('char_civ_trash_1', sx, sz, { kind: 'gang' });
       spy.goal = [sx + 4, sz + 4, true];
       await m.beat(spy, 161);
@@ -434,7 +446,7 @@ export const CH4 = [
     async run(m) {
       const g = m.g, v = voice('CH4_M_08_INTRO');
       const [sx, sz] = SPOT.swamp;
-      const betty = await m.spawnPed('char_betty', ...road(m, sx + 2, sz + 2, 1).slice(0, 2), { kind: 'ally', sex: 'female' });
+      const betty = await m.spawnPed('char_betty', ...walkable(m, sx + 2, sz + 2).slice(0, 2), { kind: 'ally', sex: 'female' });
       void betty;
       m.objective(168);
       await m.say([['贝蒂', 169, v()], ['强尼', 170, v()], ['贝蒂', 171, v()], ['强尼', 172, v()], ['贝蒂', 173, v()], ['强尼', 174, v()], ['强尼', 175, v()], ['强尼', 176, v()]]);

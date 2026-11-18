@@ -112,3 +112,9 @@ b { color: #ffd23c; font-weight: normal; }
   #letterbox .line { font-size: 17px; }
   #screen button { transform: scale(.9); }
 }
+
+/* phones: play in landscape */
+#rotate { display: none; position: fixed; inset: 0; z-index: 99; background: #000 url(/assets/tex/title.webp) center / cover; color: #fff;
+  font-size: 22px; align-items: flex-end; justify-content: center; padding-bottom: 12vh; text-shadow: 2px 2px 0 #000; }
+@media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+html, body { overscroll-behavior: none; -webkit-touch-callout: none; touch-action: none; }

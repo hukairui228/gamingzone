@@ -1,5 +1,5 @@
 import { voice, road } from './util.js';
-import { SPOT, setWanted, squad, cast, hunt, trail, arm } from './ch4.js';
+import { SPOT, setWanted, squad, cast, hunt, trail, arm, walkable } from './ch4.js';
 
 // Chapter 5 — "王座之前", the finale. Every on-screen line is the original ch5 table text by index;
 // voice clips cin_ch5_m_NN_<part>_XX follow each mission's dialogue lines in order.
@@ -51,9 +51,9 @@ export const CH5 = [
       await cast(m, [['LC', 'char_lc'], ['贝蒂', 'char_betty', 'female'], ['乔伊', 'char_joey']], vx, vz);
       m.objective(23);
       await m.say([['LC', 24, v()], ['强尼', 25, v()], ['乔伊', 26, v()], ['强尼', 27, v()], ['LC', 28, v()], ['贝蒂', 29, v()], ['强尼', 30, v()], ['贝蒂', 31, v()], ['强尼', 32, v()]]);
-      const [hx, hz] = road(m, SPOT.hillbilly[0], SPOT.hillbilly[1], 1);
+      const [hx, hz] = walkable(m, SPOT.hillbilly[0], SPOT.hillbilly[1]);
       await m.goto(hx, hz, { r: 12, text: 33 });
-      const tammie = await m.spawnPed('char_tammie', ...road(m, hx + 6, hz + 3, 1).slice(0, 2), { kind: 'gang', weapon: 'beretta', health: 140 });
+      const tammie = await m.spawnPed('char_tammie', ...walkable(m, hx + 6, hz + 3).slice(0, 2), { kind: 'gang', weapon: 'beretta', health: 140 });
       const goons = await squad(m, HILLBILLIES.slice(0, 4), hx + 6, hz + 3, { kind: 'gang', weapon: ['uzi', 'beretta', 'ak47'] }, 9);
       const vm = voice('CH5_M_02_MIDDLE');
       await m.say([['汤米', 34, vm()], ['强尼', 35, vm()], ['汤米', 36, vm()], ['强尼', 37, vm()], ['汤米', 38, vm()], ['强尼', 39, vm()],
@@ -83,7 +83,7 @@ export const CH5 = [
       await m.goto(cx - 50, cz + 60, { r: 30, text: 58, vehicle: heli });
       const guards = await squad(m, KLICK, cx, cz, { hostile: true, weapon: ['ak47', 'uzi', 'beretta'] }, 14);
       await m.killAll(guards, 59);
-      const [gx, gz] = road(m, cx, cz, 1);
+      const [gx, gz] = walkable(m, cx, cz);
       await m.goto(gx, gz, { r: 8, text: 60 });
       const ve = voice('CH5_M_03_END');
       await m.say([['强尼', 61, ve()]]);
@@ -129,13 +129,13 @@ export const CH5 = [
       await m.goto(mx, mz, { r: 12, text: 89, car: true });
       const va = voice('CH5_M_05_MIDDLE_A');
       await m.say([['LC', 90, va()], ['强尼', 91, va()], ['LC', 92, va()], ['强尼', 93, va()], ['LC', 94, va()]]);
-      const [px, pz] = road(m, mx + 30, mz + 30, 1);
+      const [px, pz] = walkable(m, mx + 30, mz + 30);
       await m.goto(px, pz, { r: 5, text: 95 });
       const vb = voice('CH5_M_05_MIDDLE_B');
       await m.say([['LC', 96, vb()], ['强尼', 97, vb()], ['LC', 98, vb()], ['强尼', 99, vb()]]);
       arm(g, 'sniper', 15);
       // Clive is out of reach on the roof: one good hit sends him running
-      const [kx, kz] = road(m, mx - 25, mz - 30, 1);
+      const [kx, kz] = walkable(m, mx - 25, mz - 30);
       const clive = await m.spawnPed('char_bigbossman', kx, kz, { kind: 'gang', health: 9999, yaw: 0 });
       m.objective(100);
       m.hint = { type: 'beat', p: clive, threshold: 9998 };
@@ -161,7 +161,7 @@ export const CH5 = [
       await trail(m, tank, road(m, SPOT.airport[0], SPOT.airport[1]), { text: 110, warn: 111, lose: 260, speed: 0.7 });
       const vd = voice('CH5_M_05_MIDDLE_D');
       await m.say([['LC', 112, vd()], ['强尼', 113, vd()]]);
-      const [ex, ez] = road(m, tank.pos.x + 3, tank.pos.z + 3, 1);
+      const [ex, ez] = walkable(m, tank.pos.x + 3, tank.pos.z + 3);
       const boss = await m.spawnPed('char_bigbossman', ex, ez, { hostile: true, weapon: 'ak47', health: 300 });
       const guards = await squad(m, KLICK.slice(1, 3), ex, ez, { hostile: true, weapon: 'uzi' }, 5);
       await m.killAll([boss, ...guards], 114);

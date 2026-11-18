@@ -158,8 +158,8 @@ async function tail(m, v, dest, { far = 140, text, speed = 0.6 } = {}) {
   const stop = drive(m, v, dest, { speed });
   const b = () => (v.health > 0 ? { x: v.pos.x, z: v.pos.z, color: '#3fd4ff' } : null);
   m.blipList.push(b);
-  const lost = addCheck(m, () => (dist(v, g.focus.x, g.focus.z) > far ? g.t('global', 93) : null));
-  await custom(m, () => dist(v, dest[0], dest[1]) < 16, () => v.place(dest[0], g.world.height(dest[0], dest[1], 80), dest[1], v.yaw));
+  const lost = addCheck(m, () => (!v.stop && dist(v, g.focus.x, g.focus.z) > far ? g.t('global', 93) : null));
+  await custom(m, () => (dist(v, dest[0], dest[1]) < 16 ? (v.stop = true) : false), () => { v.stop = true; v.place(dest[0], g.world.height(dest[0], dest[1], 80), dest[1], v.yaw); });
   stop(); lost(); m.unblip(b);
   v.vf = 0; v.stop = true;
 }
@@ -171,7 +171,7 @@ async function race(m, cps, rival, text) {
   const stop = drive(m, rival, () => cps[Math.min(ri, cps.length - 1)], { speed: 0.85 });
   const adv = addCheck(m, () => {
     if (ri < cps.length && dist(rival, cps[ri][0], cps[ri][1]) < 16) ri++;
-    return ri >= cps.length ? '​' : null; // rival crossed the line first
+    return ri >= cps.length && !rival.stop ? '\u200b' : null; // rival crossed the line first
   });
   m.blipList.push(() => ({ x: rival.pos.x, z: rival.pos.z, color: '#ff2a2a', small: true }));
   for (let i = 0; i < cps.length; i++) {
@@ -724,8 +724,8 @@ export const CH1 = [
       m.objective(375);
       const b = () => ({ x: fleeing.pos.x, z: fleeing.pos.z, color: '#ff2a2a' });
       m.blipList.push(b);
-      const lost = addCheck(m, () => (dist(fleeing, g.focus.x, g.focus.z) > 380 ? g.t('global', 93) : null));
-      await custom(m, () => dist(fleeing, g.focus.x, g.focus.z) < 10);
+      const lost = addCheck(m, () => (!fleeing.stop && dist(fleeing, g.focus.x, g.focus.z) > 380 ? g.t('global', 93) : null));
+      await custom(m, () => (dist(fleeing, g.focus.x, g.focus.z) < 10 ? (fleeing.stop = true) : false), () => { fleeing.stop = true; });
       lost(); m.unblip(b);
       fleeing.stop = true; fleeing.vf = 0;
       bark(m, 'sfx_boat_impact_small');

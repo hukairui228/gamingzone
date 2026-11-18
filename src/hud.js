@@ -153,16 +153,28 @@ export class Hud {
     return Math.max(0.55, Math.min(1.35, s * (this.g.settings?.hudScale || 1)));
   }
 
+  /** safe-area insets (notch / Dynamic Island) in px */
+  insets() {
+    if (!this.probe) {
+      this.probe = document.createElement('div');
+      this.probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+      document.body.appendChild(this.probe);
+    }
+    const cs = getComputedStyle(this.probe);
+    return { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
+  }
+
   layout() {
     if (!this.items) return;
     const s = this.scale;
+    const ins = this.insets();
     this.hud.style.setProperty('--s', s);
     for (const d of this.items) {
       const x = +d.dataset.x, y = +d.dataset.y, a = d.dataset.a;
-      let px = x * s, py = y * s;
-      if (a[1] === 'r') px = innerWidth - (W0 - x) * s;
+      let px = x * s + ins.l, py = y * s + ins.t;
+      if (a[1] === 'r') px = innerWidth - ins.r - (W0 - x) * s;
       if (a[1] === 'c') px = innerWidth / 2 + (x - W0 / 2) * s;
-      if (a[0] === 'b') py = innerHeight - (H0 - y) * s;
+      if (a[0] === 'b') py = innerHeight - ins.b - (H0 - y) * s;
       d.style.left = px + 'px'; d.style.top = py + 'px';
       if (d.id === 'minimap') { d.style.width = d.dataset.w * s + 'px'; d.style.height = d.dataset.h * s + 'px'; }
       else d.style.zoom = s;
@@ -177,7 +189,10 @@ export class Hud {
     if (p >= 1) setTimeout(() => this.el('#loading').classList.add('hidden'), 300);
   }
 
-  show(on) { this.hud.classList.toggle('hidden', !on); }
+  show(on) {
+    this.hud.classList.toggle('hidden', !on);
+    document.getElementById('touch')?.classList.toggle('hidden', !on);
+  }
 
   /** original message box sliding in from the left (huds frame 142–147) */
   notify(text, t = 2.5) {

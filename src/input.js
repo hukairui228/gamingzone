@@ -59,6 +59,9 @@ export class Input {
       const up = () => { T.buttons.delete(k); el.classList.remove('pressed'); };
       el.addEventListener('pointerup', up); el.addEventListener('pointerleave', up);
     }
+    root.classList.toggle('hidden', hud.hud.classList.contains('hidden'));
+    this.driving = null;
+    this.setTouchMode(false);
     hud.layout();
     let sid = null, sx = 0, sy = 0, lid = null, lx = 0, ly = 0;
     const R = 50;

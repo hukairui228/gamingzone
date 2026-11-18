@@ -6,7 +6,7 @@ Requires: pip install numpy pillow texture2ddecoder
 import io, os, sys, zipfile
 
 sys.path.insert(0, os.path.dirname(__file__))
-import pvr2png, convert_city, convert_model, build_roads, convert_anim, convert_text, convert_sprite
+import cgbi, pvr2png, convert_city, convert_model, build_roads, convert_anim, convert_text, convert_sprite
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'public', 'assets')
@@ -50,6 +50,9 @@ def main(ipa):
                                                  'chapter3.bsprite', 'chapter4.bsprite', 'chapter5.bsprite', 'races.bsprite',
                                                  'sidemission1.bsprite', 'sidemission2.bsprite')], os.path.join(OUT, 'ui'))
     convert_sprite.compose(raw('splash960.bsprite'), os.path.join(tex_out, 'splash960.webp'), os.path.join(tex_out, 'title.webp'))
+    icon = next((n for n in z.namelist() if n.endswith('AppIcon76x76@2x~ipad.png')), None)
+    if icon:
+        cgbi.decode(z.read(icon)).convert('RGB').save(os.path.join(OUT, 'icon.png'))
     os.makedirs(os.path.join(OUT, 'fonts'), exist_ok=True)
     for f in ('font_chinese.ttf', 'font_latin.ttf'):
         with open(os.path.join(OUT, 'fonts', f), 'wb') as fh:

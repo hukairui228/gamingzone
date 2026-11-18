@@ -62,7 +62,7 @@ export class NightLights {
         this.spot.position.set(pv.pos.x + f.x * (pv.length * 0.5), pv.pos.y + 0.9, pv.pos.z + f.z * (pv.length * 0.5));
         this.spot.target.position.set(pv.pos.x + f.x * 20, pv.pos.y - 0.5, pv.pos.z + f.z * 20);
         this.spot.target.updateMatrixWorld();
-        this.spot.intensity = 260 * night;
+        this.spot.intensity = 170 * night;
       } else this.spot.intensity = 0;
     }
     // re-pick the nearest lamps a few times per second
@@ -80,7 +80,7 @@ export class NightLights {
       const p = near[i];
       if (!p) { l.intensity = 0; return; }
       l.position.set(p[0][0], p[0][1] - 0.4, p[0][2]);
-      l.intensity = 38 * night;
+      l.intensity = 26 * night;
     });
   }
 }

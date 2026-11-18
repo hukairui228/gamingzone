@@ -55,6 +55,13 @@ def main(ipa):
         with open(os.path.join(OUT, 'fonts', f), 'wb') as fh:
             fh.write(z.read(pack[f]))
     convert_audio([n for n in sorted(pack) if n.endswith('.wav')], raw, os.path.join(OUT, 'audio'))
+    import upscale_textures
+    upscale_textures.make_specs(OUT)
+    try:
+        import torch  # noqa: F401  optional HD pack (Real-ESRGAN on CPU, ~1 min per texture)
+        upscale_textures.main(OUT)
+    except ImportError:
+        print('HD textures skipped (pip install torch to generate them)')
     print('done ->', OUT)
 
 

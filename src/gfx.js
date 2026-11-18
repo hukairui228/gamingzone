@@ -218,15 +218,15 @@ export class Gfx {
     this.sun.target.position.set(fx, 0, fz);
     this.sun.position.set(fx, 0, fz).addScaledVector(lightDir, 600);
     this.sun.target.updateMatrixWorld();
-    this.sun.color.setRGB(1, 0.94 - golden * 0.3, 0.86 - golden * 0.5).lerp(new THREE.Color(0x8fa6ff), night);
+    this.sun.color.setRGB(1, 0.94 - golden * 0.38, 0.86 - golden * 0.62).lerp(new THREE.Color(0x8fa6ff), night);
     this.sun.intensity = 2.5 * day + 0.2 * night;
-    this.hemi.intensity = 0.75 * day + 0.12 * night;
+    this.hemi.intensity = 0.75 * day + 0.09 * night;
     this.hemi.color.setRGB(0.74, 0.85, 0.96).lerp(new THREE.Color(0xf2b48c), golden * 0.5).lerp(new THREE.Color(0x3a5590), night);
     this.hemi.groundColor.setRGB(0.61, 0.54, 0.42).lerp(new THREE.Color(0x101418), night);
 
     const fogDay = new THREE.Color(0xa9cbe8).lerp(new THREE.Color(0xf0b88a), golden);
     this.scene.fog.color.copy(fogDay).lerp(new THREE.Color(0x0a0f1c), night);
-    this.renderer.toneMappingExposure = 0.88 + night * 0.15;
+    this.renderer.toneMappingExposure = 0.88 + night * 0.08;
 
     // lens flare sits on the sun, far away along its direction
     this.flare.position.copy(this.camera.position).addScaledVector(this.sunDir, 3500);

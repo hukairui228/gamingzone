@@ -33,7 +33,7 @@ function cityMaterial(b) {
   const m = new THREE.MeshStandardMaterial({
     map, vertexColors: true, roughness: spec ? 1 : foliage ? 0.9 : 0.82, metalness: spec ? 1 : 0,
     roughnessMap: spec, metalnessMap: spec,
-    bumpMap: BUMPY.test(b.texture || '') ? map : null, bumpScale: 1.2,
+    bumpMap: BUMPY.test(b.texture || '') ? map : null, bumpScale: 0.8,
     alphaTest: b.alphaTest ? 0.5 : 0, side: foliage ? THREE.DoubleSide : THREE.FrontSide,
     emissiveMap: night ? texture(night) : null,
     emissive: night ? 0xffffff : 0x000000,

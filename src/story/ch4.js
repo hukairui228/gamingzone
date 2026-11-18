@@ -17,7 +17,7 @@ export const SPOT = {
   swamp: [-666.6, 263.6],
   concert: [-64, -130.3],
   restaurant: [296.8, 259.7],
-  airport: [-571, -426.7],
+  airport: [-482.7, -371.5],
   hillbilly: [-436.4, -703.6],
   mall: [-134.2, 103.7],
   clive: [489.8, -617.8],
@@ -285,7 +285,7 @@ export const CH4 = [
         ['强尼', 88, v()], ['LC', 89, v()], ['强尼', 90, v()], ['乔伊', 91, v()], ['强尼', 92, v()], ['LC', 93, v()]]);
       // molotovs are not in this arsenal: LC hands over explosives instead
       arm(g, 'rpg', 8);
-      const [gx, gz] = road(m, SPOT.vega[0], SPOT.vega[1], 1);
+      const [gx, gz] = road(m, SPOT.vega[0], SPOT.vega[1]);
       await m.goto(gx, gz, { r: 14, text: 94 });
       const vcars = [];
       const pool = ['car_lamb', 'car_laufer', 'car_vamp', 'car_plymouth_flames', 'car_homm'];

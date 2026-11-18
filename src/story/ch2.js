@@ -6,18 +6,25 @@ import { voice } from './util.js';
 
 // ------------------------------------------------------------------ shared helpers (also used by ch3.js)
 export const LOC = {
-  betty: [-415, -470], kiddush: [40, -200], vega: [720, -250], haiti: [-280, -520], design: [60, -560],
-  police: [-178, -205], port: [250, 230], slaughter: [-200, -760], swamp: [-813, 240], swamp2: [-705, 6],
-  lcHotel: [735, 100], villa: [347, 10], albert: [-20, 40], airport: [-600, -250],
+  betty: [-387.8, -470], kiddush: [43.1, -200], vega: [709.1, -248], haiti: [-280, -520], design: [60, -560],
+  police: [-178, -205], port: [250, 230], slaughter: [-241.4, -725], swamp: [-813, 240], swamp2: [-705, 6],
+  lcHotel: [741.2, 100.3], villa: [347, 10], albert: [-20, 40], airport: [-600, -250],
 };
 
-/** sidewalk/road point near (x,z), shifted ds metres along the road; off: 0 road centre, ±1 sidewalk */
+/** sidewalk/road point near (x,z), shifted ds metres along the road; off: 0 road centre, ±1 preferred sidewalk side.
+ *  Falls back to the other side / the road centre when a sidewalk point has no ground or sits on a structure. */
 export function spot(m, x, z, off = 1, ds = 0) {
-  const R = m.g.roads, n = R.nearest(x, z, 400);
+  const R = m.g.roads, W = m.g.world, n = R.nearest(x, z, 400);
   if (!n) return [x, z, 0];
-  const e = R.edges[n.e];
-  const p = R.point(e, 1, Math.max(0, Math.min(e.length, n.s + ds)), off ? R.sidewalkOffset(e) * Math.sign(off) : 0, {});
-  return [p.x, p.z, Math.atan2(p.tx, p.tz)];
+  const e = R.edges[n.e], s = Math.max(0, Math.min(e.length, n.s + ds));
+  const c = R.point(e, 1, s, 0, {});
+  const hc = W.height(c.x, c.z, 8);
+  for (const k of off ? [Math.sign(off), -Math.sign(off)] : []) {
+    const p = R.point(e, 1, s, R.sidewalkOffset(e) * k, {});
+    const h = W.height(p.x, p.z, 8);
+    if (h > -Infinity && Math.abs(h - hc) < 1.2) return [p.x, p.z, Math.atan2(p.tx, p.tz)];
+  }
+  return [c.x, c.z, Math.atan2(c.tx, c.tz)];
 }
 
 /** nearest walkable ground below roof level (used off the road network, e.g. the swamp) */
@@ -150,11 +157,11 @@ const v2 = (n, part) => voice(`CH2_M_${String(n).padStart(2, '0')}_${part}`);
 export const CH2 = [
   {
     id: 'ch2_m01', chapter: 2, file: 'ch2', title: '高速路出口', reward: 2000,
-    giver: [717, -240],
+    giver: LOC.vega,
     async run(m) {
       const g = m.g, vi = v2(1, 'INTRO'), vm = v2(1, 'MIDDLE'), ve = v2(1, 'END');
       const [hx, hz] = spot(m, ...LOC.vega, 1);
-      const betty = await ally(m, 'char_betty', hx + 1.2, hz, 'female');
+      const betty = await ally(m, 'char_betty', ...spot(m, hx, hz, 1, 1.5).slice(0, 2), 'female');
       m.protect(betty, ['global', 327]);
       await m.say([['强尼', 7, vi()], ['贝蒂', 8, vi()], ['强尼', 9, vi()], ['贝蒂', 10, vi()], ['强尼', 11, vi()], ['贝蒂', 12, vi()],
         ['强尼', 13, vi()], ['贝蒂', 14, vi()], ['强尼', 15, vi()]]);
@@ -186,7 +193,7 @@ export const CH2 = [
       const g = m.g, vi = v2(2, 'INTRO'), vm = v2(2, 'MIDDLE'), ve = v2(2, 'END');
       m.noWanted = true;
       const [bx, bz] = spot(m, ...LOC.betty, 1);
-      await ally(m, 'char_betty', bx + 1.2, bz, 'female');
+      await ally(m, 'char_betty', ...spot(m, bx, bz, 1, 1.5).slice(0, 2), 'female');
       await m.say([['强尼', 35, vi()], ['贝蒂', 36, vi()]]);
       const [px, pz, pyaw] = spot(m, ...LOC.police, 1);
       await m.goto(px, pz, { r: 8, text: 37 });
@@ -223,7 +230,7 @@ export const CH2 = [
     async run(m) {
       const g = m.g, vi = v2(3, 'INTRO'), vm = v2(3, 'MIDDLE'), ve = v2(3, 'END');
       const [bx, bz] = spot(m, ...LOC.betty, 1);
-      await ally(m, 'char_betty', bx + 1.2, bz, 'female');
+      await ally(m, 'char_betty', ...spot(m, bx, bz, 1, 1.5).slice(0, 2), 'female');
       await m.say([['强尼', 59, vi()], ['贝蒂', 60, vi()], ['强尼', 61, vi()], ['贝蒂', 62, vi()], ['强尼', 63, vi()], ['贝蒂', 64, vi()],
         ['强尼', 65, vi()], ['贝蒂', 66, vi()]]);
       const [kx, kz] = spot(m, ...LOC.kiddush, 1);
@@ -253,7 +260,7 @@ export const CH2 = [
     async run(m) {
       const g = m.g, vi = v2(4, 'INTRO'), vm = v2(4, 'MIDDLE'), ve = v2(4, 'END');
       const [kx, kz] = spot(m, ...LOC.kiddush, 1);
-      await ally(m, 'char_herman', kx + 1.2, kz);
+      await ally(m, 'char_herman', ...spot(m, kx, kz, 1, 1.5).slice(0, 2));
       await m.say([['赫尔曼', 87, vi()], ['赫尔曼', 88, vi()], ['强尼', 89, vi()], ['强尼', 90, vi()], ['强尼', 91, vi()], ['赫尔曼', 92, vi()], ['赫尔曼', 93, vi()]]);
       const [cx, cz, cyaw] = spot(m, kx, kz, 0, 10);
       await m.spawnCar('car_homm_black', cx, cz, cyaw);
@@ -281,7 +288,7 @@ export const CH2 = [
     async run(m) {
       const g = m.g, vi = v2(5, 'INTRO'), ve = v2(5, 'END');
       const [kx, kz] = spot(m, ...LOC.kiddush, 1);
-      await ally(m, 'char_herman', kx + 1.2, kz);
+      await ally(m, 'char_herman', ...spot(m, kx, kz, 1, 1.5).slice(0, 2));
       await m.say([['赫尔曼', 109, vi()], ['赫尔曼', 110, vi()], ['强尼', 111, vi()], ['赫尔曼', 112, vi()], ['强尼', 113, vi()], ['赫尔曼', 114, vi()], ['强尼', 115, vi()]]);
       const [px, pz, pyaw] = spot(m, ...LOC.police, 0);
       await m.goto(px, pz, { r: 12, text: 116 });
@@ -304,7 +311,7 @@ export const CH2 = [
     async run(m) {
       const g = m.g, vi = v2(6, 'INTRO'), ve = v2(6, 'END');
       const [kx, kz] = spot(m, ...LOC.kiddush, 1);
-      await ally(m, 'char_herman', kx + 1.2, kz);
+      await ally(m, 'char_herman', ...spot(m, kx, kz, 1, 1.5).slice(0, 2));
       await m.say([['强尼', 127, vi()], ['赫尔曼', 128, vi()], ['强尼', 129, vi()], ['赫尔曼', 130, vi()], ['强尼', 131, vi()], ['赫尔曼', 132, vi()],
         ['赫尔曼', 133, vi()], ['赫尔曼', 134, vi()], ['强尼', 135, vi()]]);
       const [bx, bz] = water(m, 150, -120);
@@ -334,7 +341,7 @@ export const CH2 = [
     async run(m) {
       const g = m.g, vi = v2(7, 'INTRO'), vm = v2(7, 'MIDDLE'), ve = v2(7, 'END');
       const [bx, bz] = spot(m, ...LOC.betty, 1);
-      await ally(m, 'char_betty', bx + 1.2, bz, 'female');
+      await ally(m, 'char_betty', ...spot(m, bx, bz, 1, 1.5).slice(0, 2), 'female');
       await m.say([['贝蒂', 149, vi()], ['贝蒂', 150, vi()], ['强尼', 151, vi()], ['贝蒂', 152, vi()], ['强尼', 153, vi()], ['贝蒂', 154, vi()],
         ['强尼', 155, vi()], ['贝蒂', 156, vi()], ['强尼', 157, vi()]]);
       const [gx, gz, gyaw] = spot(m, -300, -560, 1);
@@ -382,13 +389,13 @@ export const CH2 = [
     async run(m) {
       const g = m.g, vi = v2(8, 'INTRO'), vm = v2(8, 'MIDDLE'), ve = v2(8, 'END');
       const [bx, bz] = spot(m, ...LOC.betty, 1);
-      await ally(m, 'char_betty', bx + 1.2, bz, 'female');
+      await ally(m, 'char_betty', ...spot(m, bx, bz, 1, 1.5).slice(0, 2), 'female');
       await m.say([['强尼', 169, vi()], ['贝蒂', 170, vi()], ['强尼', 171, vi()], ['贝蒂', 172, vi()], ['强尼', 173, vi()], ['贝蒂', 174, vi()], ['强尼', 175, vi()]]);
       const [px, pz] = spot(m, ...LOC.police, 1);
       await m.goto(px, pz, { r: 6, text: 176 });
       const [fx, fz] = spot(m, px, pz, 1, 9);
       const mk = await m.marker(fx, fz, 'checkpoint_briefcase');
-      await plant(m, fx, fz, '', 3, 'sfx_pickup_star');
+      await plant(m, fx, fz, null, 3, 'sfx_pickup_star');
       m.removeMarker(mk);
       await m.say([['强尼', 177, vm()]]);
       g.police.crime('hitcop', { x: px, z: pz });
@@ -404,7 +411,7 @@ export const CH2 = [
     async run(m) {
       const vi = v2(9, 'INTRO'), ve = v2(9, 'END');
       const [bx, bz] = spot(m, ...LOC.betty, 1);
-      await ally(m, 'char_betty', bx + 1.2, bz, 'female');
+      await ally(m, 'char_betty', ...spot(m, bx, bz, 1, 1.5).slice(0, 2), 'female');
       await m.say([['强尼', 185, vi()], ['贝蒂', 186, vi()], ['强尼', 187, vi()], ['贝蒂', 188, vi()], ['贝蒂', 189, vi()], ['强尼', 190, vi()]]);
       const [wx, wz] = water(m, -480, -560);
       const boat = await m.spawnCar('boat_seadoo', wx, wz, 0);
@@ -428,7 +435,7 @@ export const CH2 = [
     async run(m) {
       const g = m.g, vi = v2(10, 'INTRO'), vm = v2(10, 'MIDDLE'), ve = v2(10, 'END');
       const [bx, bz, byaw] = spot(m, ...LOC.betty, 1);
-      await ally(m, 'char_betty', bx + 1.2, bz, 'female');
+      await ally(m, 'char_betty', ...spot(m, bx, bz, 1, 1.5).slice(0, 2), 'female');
       const [cx, cz, cyaw] = spot(m, bx, bz, 0, 10);
       await m.spawnCar('car_plymouth_barracuda', cx, cz, cyaw || byaw);
       await m.say([['强尼', 202, vi()], ['贝蒂', 203, vi()], ['贝蒂', 204, vi()], ['强尼', 205, vi()], ['强尼', 206, vi()]]);
@@ -455,7 +462,7 @@ export const CH2 = [
     async run(m) {
       const g = m.g, vi = v2(11, 'INTRO'), ve = v2(11, 'END');
       const [bx, bz] = spot(m, ...LOC.betty, 1);
-      const betty = await ally(m, 'char_betty', bx + 1.2, bz, 'female');
+      const betty = await ally(m, 'char_betty', ...spot(m, bx, bz, 1, 1.5).slice(0, 2), 'female');
       m.protect(betty, ['global', 327]);
       await m.say([['强尼', 229, vi()], ['贝蒂', 230, vi()], ['强尼', 231, vi()], ['贝蒂', 232, vi()], ['强尼', 233, vi()], ['贝蒂', 234, vi()],
         ['强尼', 235, vi()], ['贝蒂', 236, vi()], ['强尼', 237, vi()]]);

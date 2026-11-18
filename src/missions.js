@@ -97,6 +97,7 @@ export class Missions {
     const m = this.active;
     if (!m) return;
     m.failed = true;
+    this.active = null; this.g.mission = null;
     this.g.hud.big(this.g.t('global', 88) || '任务中止', '', 2.5, 'red');
     for (const w of this.waiters) w.reject(new Abort());
     this.waiters = [];
@@ -125,7 +126,7 @@ export class Missions {
           this.loadingGiver.add(n.id);
           buildModel('checkpoint_mission').then((o) => {
             const [x, z] = n.giver;
-            o.position.set(x, g.world.height(x, z, 80) + 0.05, z);
+            o.position.set(x, g.world.floor(x, z) + 0.05, z);
             o.scale.setScalar(1.5);
             g.scene.add(o);
             this.giverMarkers.set(n.id, o);
@@ -219,7 +220,7 @@ export class MissionCtx {
   async marker(x, z, model = 'checkpoint_walk') {
     const g = this.g;
     const o = await buildModel(model);
-    o.position.set(x, g.world.height(x, z, 80) + 0.05, z);
+    o.position.set(x, g.world.floor(x, z) + 0.05, z);
     o.scale.setScalar(1.6);
     g.scene.add(o);
     const mk = { obj: o };
@@ -235,7 +236,7 @@ export class MissionCtx {
   async spawnCar(model, x, z, yaw = 0, { driver = null, health, keep = true } = {}) {
     const g = this.g;
     const v = await new Vehicle(model).load();
-    const h = g.world.height(x, z, 80);
+    const h = g.world.floor(x, z);
     v.place(x, h > -Infinity ? h : 0.5, z, yaw);
     v.mission = true; v.keep = keep;
     v.driver = driver;
@@ -253,7 +254,7 @@ export class MissionCtx {
   async spawnPed(model, x, z, opts = {}) {
     const g = this.g;
     const p = await g.peds.create(model, opts.kind || 'gang', opts.sex || 'male', opts.variant);
-    const h = g.world.height(x, z, 80);
+    const h = g.world.floor(x, z);
     p.pos.set(x, h > -Infinity ? h : 0, z);
     p.yaw = opts.yaw || 0; p.root.rotation.y = p.yaw;
     p.mission = true;

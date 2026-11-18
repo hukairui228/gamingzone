@@ -44,14 +44,20 @@ function steerBoat(g, v, tx, tz, dt, maxSpeed) {
 async function race(m, { cps, rivals = [], skill = 0.82, winText, grid, rivalCars = [] }) {
   const g = m.g, pl = g.player, pv = pl.vehicle;
   const boat = pv && pv.type === 'boat';
-  const [gx, gz, gyaw] = grid || [pv.pos.x, pv.pos.z, pv.yaw];
+  let [gx, gz, gyaw] = grid || [];
+  if (!grid) { // line up on the road where the player stands, facing the first checkpoint
+    [gx, gz] = boat ? [pv.pos.x, pv.pos.z] : road(m, pv.pos.x, pv.pos.z);
+    gyaw = Math.atan2(cps[0][0] - gx, cps[0][1] - gz);
+  }
   pv.place(gx, pv.pos.y, gz, gyaw);
   const fx = Math.sin(gyaw), fz = Math.cos(gyaw), rx = Math.cos(gyaw), rz = -Math.sin(gyaw);
   // grid: rivals beside and behind the player
   const field = [...rivalCars];
   for (let i = 0; i < rivals.length; i++) {
     const side = i % 2 ? -1 : 1, row = Math.floor(i / 2);
-    const x = gx + rx * side * 4.5 - fx * row * 8, z = gz + rz * side * 4.5 - fz * row * 8;
+    // boats line up abreast (the dock is behind them); cars form a grid behind the player
+    const lat = boat ? 7 * (row + 1) : 3.2, back = boat ? 0 : (row + 1) * 7;
+    const x = gx + rx * side * lat - fx * back, z = gz + rz * side * lat - fz * back;
     field.push(await m.spawnCar(rivals[i], x, z, gyaw, { driver: 'npc' }));
   }
   for (const v of field) { v.race = { cp: 0, purs: boat ? null : new Pursuit(g, v) }; v.place(v.pos.x, v.pos.y, v.pos.z, gyaw); }
@@ -132,7 +138,7 @@ export const CHR = [
       const v = voice('CHR_M01_INTRO');
       await m.say([['阿尔伯特', 8, v()], ['阿尔伯特', 9, v()], ['强尼', 10, v()], ['阿尔伯特', 11, v()], ['阿尔伯特', 12, v()], ['强尼', 13, v()]]);
       await ride(m, 'car_truck_redneck', 7);
-      await race(m, { cps: street(m, COURSE_DOWNTOWN.slice(1)), rivals: ['car_truck', 'car_suv_detour', 'car_van'], skill: 0.75, winText: 14 });
+      await race(m, { cps: street(m, [G, ...COURSE_DOWNTOWN.slice(1)]), rivals: ['car_truck', 'car_suv_detour', 'car_van'], skill: 0.75, winText: 14 });
       await m.say([['阿尔伯特', 15, 'cin_chr_m01_ending_00']]);
     },
   },
@@ -158,7 +164,7 @@ export const CHR = [
       await ride(m, 'car_plymouth_flames', 33);
       const [ax, az, ayaw] = road(m, G[0] - 10, G[1] - 6);
       const al = await m.spawnCar('car_plymouth_barracuda', ax, az, ayaw, { driver: 'npc' });
-      await race(m, { cps: street(m, COURSE_DOWNTOWN.slice(1)), rivalCars: [al], skill: 0.85, winText: 38 });
+      await race(m, { cps: street(m, [G, ...COURSE_DOWNTOWN.slice(1)]), rivalCars: [al], skill: 0.85, winText: 38 });
       await m.say([['阿尔伯特', 39, 'cin_chr_m03_ending_00']]);
     },
   },
@@ -185,7 +191,7 @@ export const CHR = [
       const [ax, az, ayaw] = road(m, G[0] - 10, G[1] - 6);
       const al = await m.spawnCar('bike_kawa_sport', ax, az, ayaw, { driver: 'npc' });
       m.g.hud.big(m.T(60), '', 2);
-      await race(m, { cps: street(m, COURSE_DOWNTOWN.slice(1)), rivalCars: [al], rivals: ['bike_dirt'], skill: 0.8, winText: 59 });
+      await race(m, { cps: street(m, [G, ...COURSE_DOWNTOWN.slice(1)]), rivalCars: [al], rivals: ['bike_dirt'], skill: 0.8, winText: 59 });
     },
   },
   {

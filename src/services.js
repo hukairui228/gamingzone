@@ -45,7 +45,7 @@ export class Services {
       const p = R.point(e, 1, n.s, R.sidewalkOffset(e) * (s.type === 'repair' ? 0 : 1), {});
       s.x = p.x; s.z = p.z;
       const m = await buildModel(SHOP_MODEL[s.type]);
-      m.position.set(p.x, g.world.height(p.x, p.z, 80) + 0.05, p.z);
+      m.position.set(p.x, g.world.floor(p.x, p.z) + 0.05, p.z);
       m.scale.setScalar(1.6);
       g.scene.add(m);
       s.m = m;
@@ -60,7 +60,7 @@ export class Services {
         const e = R.edges[lane.e];
         const p = R.point(e, 1, lane.s, R.sidewalkOffset(e) + 1, {});
         if (filter && !filter(p.x, p.z)) continue;
-        const y = g.world.height(p.x, p.z, 80);
+        const y = g.world.floor(p.x, p.z);
         if (y === -Infinity) continue;
         const id = `${kind}${i}`;
         i++;
@@ -182,7 +182,7 @@ export class Services {
     const g = this.g, R = g.roads;
     const n = R.nearest(s.x, s.z, 100), e = R.edges[n.e], p = R.point(e, 1, n.s, R.laneOffset(e), {});
     const v = await new Vehicle(model).load();
-    v.place(p.x, g.world.height(p.x, p.z, 80), p.z, Math.atan2(p.tx, p.tz));
+    v.place(p.x, g.world.floor(p.x, p.z), p.z, Math.atan2(p.tx, p.tz));
     g.scene.add(v.root);
     g.parked.add(v);
     v.keep = true;

@@ -28,51 +28,72 @@ export class Input {
     });
     addEventListener('wheel', (e) => { this.mouse.wheel += Math.sign(e.deltaY); }, { passive: true });
     this.isTouch = matchMedia('(pointer: coarse)').matches;
-    if (this.isTouch) this.buildTouch();
+
   }
 
-  buildTouch() {
-    const ui = document.createElement('div');
-    ui.id = 'touch';
-    ui.innerHTML = `
-      <div class="stick" id="stick"><div class="knob"></div></div>
-      <div class="tbtns">
-        <button data-b="fire">开火</button><button data-b="jump">跳</button>
-        <button data-b="enter">上车</button><button data-b="sprint">冲刺</button>
-        <button data-b="handbrake">手刹</button><button data-b="weapon">武器</button>
-      </div>`;
-    document.body.appendChild(ui);
-    const stick = ui.querySelector('#stick'), knob = stick.querySelector('.knob');
-    let sid = null, sx = 0, sy = 0, lid = null, lx = 0, ly = 0;
-    addEventListener('touchstart', (e) => {
-      for (const t of e.changedTouches) {
-        const b = t.target.closest?.('button[data-b]');
-        if (b) { this.touch.buttons.add(b.dataset.b); this.touch.tapped.add(b.dataset.b); continue; }
-        if (t.clientX < innerWidth * 0.45 && sid === null) { sid = t.identifier; sx = t.clientX; sy = t.clientY; stick.style.left = sx - 60 + 'px'; stick.style.top = sy - 60 + 'px'; stick.classList.add('on'); }
-        else if (lid === null) { lid = t.identifier; lx = t.clientX; ly = t.clientY; }
-      }
-    }, { passive: true });
-    addEventListener('touchmove', (e) => {
-      for (const t of e.changedTouches) {
-        if (t.identifier === sid) {
-          let dx = (t.clientX - sx) / 50, dy = (t.clientY - sy) / 50;
-          const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; }
-          this.touch.move.x = dx; this.touch.move.y = dy;
-          knob.style.transform = `translate(${dx * 40}px, ${dy * 40}px)`;
-        } else if (t.identifier === lid) {
-          this.touch.look.dx += (t.clientX - lx) * 1.5; this.touch.look.dy += (t.clientY - ly) * 1.5; lx = t.clientX; ly = t.clientY;
-        }
-      }
-    }, { passive: true });
-    const end = (e) => {
-      for (const t of e.changedTouches) {
-        const b = t.target.closest?.('button[data-b]');
-        if (b) this.touch.buttons.delete(b.dataset.b);
-        if (t.identifier === sid) { sid = null; this.touch.move.x = this.touch.move.y = 0; knob.style.transform = ''; stick.classList.remove('on'); }
-        if (t.identifier === lid) lid = null;
-      }
+  /** Touch controls built from the original HUD sprites at their original screen positions. */
+  buildTouch(hud) {
+    const root = document.createElement('div');
+    root.id = 'touch';
+    document.getElementById('ui').appendChild(root);
+    const T = this.touch;
+    const mk = (m, x, y, a, flip = 0) => hud.mod(m, x, y, { anchor: a, flip, parent: root });
+    const base = mk(1, 40, 500, 'bl'), knob = mk(0, 69, 529, 'bl');
+    const button = (bg, icon, x, y, ix, iy, name, hold, flip = 0) => {
+      const b = mk(bg, x, y, 'br'), i = mk(icon, ix, iy, 'br', flip);
+      i.style.pointerEvents = 'none';
+      b.addEventListener('pointerdown', (e) => { e.stopPropagation(); T.buttons.add(name); T.tapped.add(name); b.classList.add('pressed'); });
+      const up = () => { T.buttons.delete(name); b.classList.remove('pressed'); };
+      b.addEventListener('pointerup', up); b.addEventListener('pointerleave', up); b.addEventListener('pointercancel', up);
+      return [b, i];
     };
-    addEventListener('touchend', end); addEventListener('touchcancel', end);
+    this.tb = {
+      fire: button(3, 9, 893, 514, 912, 533, 'fire'),
+      enter: button(2, 10, 904, 418, 915, 438, 'enter'),
+      sprint: button(2, 11, 819, 591, 831, 602, 'sprint'),
+      jump: button(2, 14, 788, 459, 807, 482, 'jump', false, 512),
+      gas: [mk(17, 894, 559, 'br')], brake: [mk(16, 786, 574, 'br')],
+    };
+    for (const [k, el] of [['gas', this.tb.gas[0]], ['brake', this.tb.brake[0]]]) {
+      el.addEventListener('pointerdown', (e) => { e.stopPropagation(); T.buttons.add(k); el.classList.add('pressed'); });
+      const up = () => { T.buttons.delete(k); el.classList.remove('pressed'); };
+      el.addEventListener('pointerup', up); el.addEventListener('pointerleave', up);
+    }
+    hud.layout();
+    let sid = null, sx = 0, sy = 0, lid = null, lx = 0, ly = 0;
+    const R = 50;
+    this.canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch') return;
+      if (e.clientX < innerWidth * 0.4 && sid === null) {
+        sid = e.pointerId;
+        const r = base.getBoundingClientRect();
+        sx = r.left + r.width / 2; sy = r.top + r.height / 2;
+      } else if (lid === null) { lid = e.pointerId; lx = e.clientX; ly = e.clientY; }
+    });
+    addEventListener('pointermove', (e) => {
+      if (e.pointerId === sid) {
+        let dx = (e.clientX - sx) / R, dy = (e.clientY - sy) / R;
+        const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; }
+        T.move.x = dx; T.move.y = dy;
+        knob.style.translate = `${dx * 28}px ${dy * 28}px`;
+      } else if (e.pointerId === lid) {
+        T.look.dx += (e.clientX - lx) * 1.4; T.look.dy += (e.clientY - ly) * 1.4; lx = e.clientX; ly = e.clientY;
+      }
+    });
+    const end = (e) => {
+      if (e.pointerId === sid) { sid = null; T.move.x = T.move.y = 0; knob.style.translate = ''; }
+      if (e.pointerId === lid) lid = null;
+    };
+    addEventListener('pointerup', end); addEventListener('pointercancel', end);
+  }
+
+  /** show the on-foot or the driving button set */
+  setTouchMode(driving) {
+    if (!this.tb || this.driving === driving) return;
+    this.driving = driving;
+    const show = (els, on) => els.forEach((e) => { e.style.display = on ? '' : 'none'; });
+    show(this.tb.fire, !driving); show(this.tb.jump, !driving);
+    show(this.tb.gas, driving); show(this.tb.brake, driving);
   }
 
   down(...codes) { return codes.some((c) => this.keys.has(c)); }
@@ -83,12 +104,13 @@ export class Input {
     const t = this.touch;
     const s = {
       x: (this.down('KeyD', 'ArrowRight') ? 1 : 0) - (this.down('KeyA', 'ArrowLeft') ? 1 : 0) + t.move.x,
-      y: (this.down('KeyW', 'ArrowUp') ? 1 : 0) - (this.down('KeyS', 'ArrowDown') ? 1 : 0) - t.move.y,
+      y: (this.down('KeyW', 'ArrowUp') ? 1 : 0) - (this.down('KeyS', 'ArrowDown') ? 1 : 0) - (this.driving ? 0 : t.move.y)
+        + (t.buttons.has('gas') ? 1 : 0) - (t.buttons.has('brake') ? 1 : 0),
       lookX: this.mouse.dx + t.look.dx, lookY: this.mouse.dy + t.look.dy,
       fire: this.mouse.down || t.buttons.has('fire') || this.down('KeyJ'),
       aim: this.mouse.right,
       sprint: this.down('ShiftLeft', 'ShiftRight') || t.buttons.has('sprint'),
-      handbrake: this.down('Space') || t.buttons.has('handbrake'),
+      handbrake: this.down('Space') || t.buttons.has('handbrake') || (this.driving && t.buttons.has('sprint')),
       jump: this.hit('Space') || t.tapped.has('jump'),
       enter: this.hit('KeyF', 'Enter') || t.tapped.has('enter'),
       weaponNext: this.hit('KeyQ', 'KeyE') || this.mouse.wheel !== 0 || t.tapped.has('weapon'),

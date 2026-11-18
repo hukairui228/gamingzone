@@ -61,6 +61,17 @@ export class World {
     return best;
   }
 
+  /** Street-level ground at (x,z): the lowest walkable surface above the sea (skips rooftops and canopies). */
+  floor(x, z) {
+    let y = -Infinity, lim = 1e9;
+    for (let i = 0; i < 10; i++) {
+      const h = this.height(x, z, lim, 0);
+      if (h === -Infinity || h < -1.5) break;
+      y = h; lim = h - 0.5;
+    }
+    return y;
+  }
+
   /**
    * Push a vertical cylinder (x,z,radius) at feet height y with given height out of walls.
    * Mutates pos; returns {hit, nx, nz, depth} for the deepest contact.

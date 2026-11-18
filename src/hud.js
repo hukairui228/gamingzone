@@ -1,32 +1,31 @@
-import { WEAPONS } from './player.js';
+import { json } from './assets.js';
 
+// HUD rebuilt from the original huds.bsprite: every element is an original atlas module placed at the
+// original screen position, anchored to its screen corner and scaled to the viewport.
 const TEX = './assets/tex/';
-// rects in the original huds.webp atlas (1024x1024)
-const ICONS = {
-  fist: [670, 62, 92, 76], bat: [566, 4, 140, 52], beretta: [893, 88, 105, 62], uzi: [606, 148, 96, 70],
-  ak47: [724, 148, 134, 66], sniper: [496, 316, 120, 52], rpg: [862, 166, 150, 56],
-};
-const RING = [184, 0, 136, 132];
-// dialogue portraits from the original character art sheets
-export const PORTRAITS = {
-  罗斯科: ['characters1', 0, 0, 340, 420], 贝蒂: ['characters1', 340, 0, 340, 420], 波拉诺: ['characters1', 680, 0, 344, 420],
-  莫尼克: ['characters1', 0, 420, 340, 420], 维加: ['characters1', 340, 420, 340, 420], 乔伊: ['characters1', 680, 420, 344, 420],
-  强尼: ['characters2', 0, 0, 340, 440], 赫尔曼: ['characters2', 340, 0, 340, 440], 汤米: ['characters2', 680, 0, 344, 440],
-  阿梅利亚: ['characters2', 0, 440, 280, 420], LC: ['characters2', 260, 440, 300, 420],
-};
+const W0 = 1024, H0 = 768; // the iPad HD layout the sprite positions were authored for
 
-function sprite(el, [x, y, w, h], scale, file = 'huds') {
-  el.style.backgroundImage = `url(${TEX}${file}.webp)`;
-  el.style.backgroundSize = `${1024 * scale}px ${1024 * scale}px`;
-  el.style.backgroundPosition = `${-x * scale}px ${-y * scale}px`;
-  el.style.width = w * scale + 'px';
-  el.style.height = h * scale + 'px';
-}
+// original weapon icon frames (module, x, y) inside the weapon box
+const WEAPON_ICON = {
+  fist: [121, 868, 63], bat: [132, 835, 84], beretta: [122, 873, 67], uzi: [123, 867, 64],
+  ak47: [124, 854, 70], sniper: [126, 860, 75], rpg: [125, 842, 72],
+};
+// digit sprites: small white "1234567890/", big white/green/red "1234567890$,." (+ / -)
+const SMALL = { 1: 67, 2: 68, 3: 69, 4: 70, 5: 71, 6: 72, 7: 73, 8: 74, 9: 75, 0: 76, '/': 66 };
+const BIG = {
+  white: { 1: 78, 2: 79, 3: 80, 4: 81, 5: 82, 6: 83, 7: 84, 8: 85, 9: 86, 0: 87, $: 77, ',': 88, '.': 89 },
+  green: { 1: 91, 2: 92, 3: 93, 4: 94, 5: 95, 6: 96, 7: 97, 8: 98, 9: 99, 0: 100, $: 90, ',': 101, '.': 102, '+': 103 },
+  red: { 1: 105, 2: 106, 3: 107, 4: 108, 5: 109, 6: 110, 7: 111, 8: 112, 9: 113, 0: 114, $: 104, ',': 115, '.': 116, '-': 117 },
+};
+// radio station name plates (huds modules 146–151) in STATIONS order: 80s, electro, hiphop, latino, rock
+const RADIO_PLATE = [146, 149, 150, 147, 148];
+// minimap icons by blip colour
+const ICON = { '#ffd23c': 42, '#ff2a2a': 44, '#3fd4ff': 55, '#ff2fb0': 41, '#ff9a1f': 54, '#9aff5a': 56, '#c77dff': 55, house: 52, side: 45, badge: 57 };
 
 /** Rich text from the original tables: \0..\1 highlights, | line breaks. */
 export function fmt(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/\\0|\u0000/g, '<b>').replace(/\\1|\u0001/g, '</b>').replace(/\|/g, '<br>');
+    .replace(/\\0|\u0000/g, '<b>').replace(/\\1|\u0001/g, '</b>').replace(/\|/g, '<br>').replace(/\\n/g, '<br>');
 }
 
 export class Hud {
@@ -34,37 +33,28 @@ export class Hud {
     this.g = game;
     const ui = document.getElementById('ui');
     ui.innerHTML = `
-      <div id="hud" class="hidden">
-        <div id="radar"><canvas width="360" height="360"></canvas><div class="ring"></div><div class="north">N</div></div>
-        <div id="bars"><div class="bar hp"><i></i></div><div class="bar ar"><i></i></div></div>
-        <div id="topright">
-          <div id="weapon"><div class="icon"></div><div class="ammo"></div></div>
-          <div id="money">$0</div>
-          <div id="wanted"></div>
-        </div>
-        <div id="objective"></div>
-        <div id="notify"></div>
-        <div id="big"></div>
-        <div id="timer"></div>
-        <div id="speedo"></div>
-        <div id="crosshair"></div>
-        <div id="damage"></div>
-      </div>
-      <div id="dialog" class="hidden"><div class="portrait"></div><div class="box"><div class="who"></div><div class="line"></div><div class="hint">点击 / 空格 继续</div></div></div>
-      <div id="mapview" class="hidden"><div class="mapwrap"><img src="${TEX}minimap_map.webp"><canvas width="1024" height="1024"></canvas></div><div class="legend">M / Tab 关闭 · 点击地图设置导航点</div></div>
+      <div id="hud" class="hidden"></div>
+      <div id="banner"><div class="txt"></div></div>
+      <div id="msg"><div class="txt"></div></div>
+      <div id="objective"></div>
+      <div id="letterbox" class="hidden"><div class="top"></div><div class="bottom"><div class="who"></div><div class="line"></div></div><div class="skip"></div></div>
+      <div id="overlay"></div>
+      <div id="damage"></div>
+      <div id="crosshair"></div>
+      <div id="mapview" class="hidden"><div class="mapwrap"><img src="${TEX}minimap_map.webp"><canvas width="1024" height="1024"></canvas></div><div class="legend"></div></div>
       <div id="screen" class="hidden"></div>
-      <div id="loading"><div class="logo"><span>GANGSTAR</span><small>孤胆车神：雄霸迈阿密</small></div><div class="msg">正在载入原版素材…</div><div class="prog"><i></i></div></div>`;
+      <div id="loading"><img src="${TEX}title.webp"><div class="bar"><i></i></div><div class="msg">正在载入…</div></div>`;
+    this.ui = ui;
     this.el = (s) => ui.querySelector(s);
     this.hud = this.el('#hud');
-    this.radar = this.el('#radar canvas').getContext('2d');
-    sprite(this.el('#radar .ring'), RING, 1.42);
     this.mapImg = new Image();
     this.mapImg.src = TEX + 'minimap_map.webp';
-    this.notifyT = 0;
-    this.bigT = 0;
     this.route = null;
     this.blips = [];
-    this.lastWeapon = '';
+    this.parts = {};
+    this.lastMoney = null;
+    this.popups = [];
+    this.bannerT = 0; this.msgT = 0;
     this.el('#mapview canvas').addEventListener('click', (e) => {
       const r = e.target.getBoundingClientRect();
       const M = this.g.roads.map;
@@ -72,42 +62,159 @@ export class Hud {
       this.g.setWaypoint(M.x0 + u * M.scale, M.z0 + v * M.scale);
       this.drawBigMap();
     });
+    this.ready = json('ui/huds.json').then((s) => { this.sprite = s; this.build(); });
+    addEventListener('resize', () => this.layout());
   }
 
+  // ------------------------------------------------------------ sprite helpers
+  /** div showing atlas module m; anchor: which screen corner the original x,y is relative to */
+  mod(m, x, y, { anchor = 'tl', flip = 0, parent = this.hud, cls = '' } = {}) {
+    const d = document.createElement('div');
+    d.className = 'spr ' + cls;
+    this.paint(d, m, flip);
+    d.dataset.x = x; d.dataset.y = y; d.dataset.a = anchor;
+    parent.appendChild(d);
+    this.items.push(d);
+    return d;
+  }
+
+  paint(d, m, flip = 0) {
+    const [mx, my, mw, mh] = this.sprite.modules[m];
+    d.style.width = mw + 'px'; d.style.height = mh + 'px';
+    d.style.backgroundPosition = `${-mx}px ${-my}px`;
+    d.style.transform = `scale(${flip & 256 ? -1 : 1}, ${flip & 512 ? -1 : 1})`;
+    d.dataset.w = mw; d.dataset.h = mh;
+  }
+
+  /** all modules of an original frame as one group */
+  frame(i, anchor, parent) {
+    return this.sprite.frames[i].map(([m, x, y, fl]) => this.mod(m, x, y, { anchor, flip: fl, parent }));
+  }
+
+  build() {
+    const H = this.hud;
+    H.innerHTML = '';
+    this.items = [];
+    // minimap (frame 5 border pieces around the map window)
+    const mm = document.createElement('div');
+    mm.id = 'minimap'; mm.dataset.x = 23; mm.dataset.y = 24; mm.dataset.a = 'tl'; mm.dataset.w = 154; mm.dataset.h = 152;
+    mm.innerHTML = '<canvas width="308" height="304"></canvas>';
+    H.appendChild(mm); this.items.push(mm);
+    this.radar = mm.querySelector('canvas').getContext('2d');
+    this.frame(5, 'tl');
+    this.north = this.mod(40, 0, 0, { cls: 'north' });
+    mm.addEventListener('pointerdown', () => { this.g.mapOpen = !this.g.mapOpen; this.toggleMap(this.g.mapOpen); });
+    // radio panel (frames 152/153) + station plate
+    this.radio = [this.mod(61, 216, 22), this.mod(62, 393, 22), this.mod(146, 282, 38, { cls: 'plate' })];
+    this.radio[1].addEventListener('pointerdown', () => this.g.hud.notify(this.g.audio.cycleStation(), 1.5));
+    // health / armour / vehicle bars (frames 26–31, 120–122)
+    this.bar1 = [this.mod(26, 798, 17, { anchor: 'tr' }), this.mod(21, 798, 17, { anchor: 'tr', cls: 'fill' }), this.mod(27, 989, 13, { anchor: 'tr' })];
+    this.bar2 = [this.mod(26, 797, 34, { anchor: 'tr' }), this.mod(25, 797, 34, { anchor: 'tr', cls: 'fill' }), this.mod(31, 989, 31, { anchor: 'tr' })];
+    // weapon box with switch arrows (frame 4)
+    const [, la, ra] = this.frame(4, 'tr');
+    la.addEventListener('pointerdown', () => { if (!this.g.player.vehicle) this.g.player.nextWeapon(); });
+    ra.addEventListener('pointerdown', () => { if (!this.g.player.vehicle) this.g.player.nextWeapon(); });
+    this.weaponIcon = this.mod(121, 868, 63, { anchor: 'tr', cls: 'wicon' });
+    this.ammo = this.group(904, 112, 'tr');
+    // wanted level: police badges (frames 32–36)
+    this.badges = [0, 1, 2, 3, 4].map((k) => this.mod(32, 850 + 26 * k, 148, { anchor: 'tr', cls: 'badge' }));
+    // money (original white digit font) under the badges
+    this.money = this.group(975, 176, 'tr', 'right');
+    this.timerEl = this.group(480, 96, 'tc', 'center');
+    this.layout();
+  }
+
+  /** container for runs of digit sprites */
+  group(x, y, anchor, align = 'left') {
+    const d = document.createElement('div');
+    d.className = 'digits ' + align;
+    d.dataset.x = x; d.dataset.y = y; d.dataset.a = anchor; d.dataset.w = 0; d.dataset.h = 26;
+    this.hud.appendChild(d); this.items.push(d);
+    return d;
+  }
+
+  digits(el, text, set = 'white', small = false) {
+    if (el._text === text) return;
+    el._text = text;
+    el.innerHTML = '';
+    const map = small ? SMALL : BIG[set];
+    for (const ch of String(text)) {
+      const m = map[ch];
+      if (m === undefined) continue;
+      const s = document.createElement('i');
+      s.className = 'spr';
+      this.paint(s, m);
+      el.appendChild(s);
+    }
+  }
+
+  get scale() {
+    const s = Math.min(innerWidth / W0, innerHeight / H0);
+    return Math.max(0.55, Math.min(1.35, s * (this.g.settings?.hudScale || 1)));
+  }
+
+  layout() {
+    if (!this.items) return;
+    const s = this.scale;
+    this.hud.style.setProperty('--s', s);
+    for (const d of this.items) {
+      const x = +d.dataset.x, y = +d.dataset.y, a = d.dataset.a;
+      let px = x * s, py = y * s;
+      if (a[1] === 'r') px = innerWidth - (W0 - x) * s;
+      if (a[1] === 'c') px = innerWidth / 2 + (x - W0 / 2) * s;
+      if (a[0] === 'b') py = innerHeight - (H0 - y) * s;
+      d.style.left = px + 'px'; d.style.top = py + 'px';
+      if (d.id === 'minimap') { d.style.width = d.dataset.w * s + 'px'; d.style.height = d.dataset.h * s + 'px'; }
+      else d.style.zoom = s;
+      if (d.style.zoom) { d.style.left = px / s + 'px'; d.style.top = py / s + 'px'; }
+    }
+  }
+
+  // ------------------------------------------------------------ screens / text
   loading(p, msg) {
-    this.el('#loading .prog i').style.width = Math.round(p * 100) + '%';
+    this.el('#loading .bar i').style.width = Math.round(p * 100) + '%';
     if (msg) this.el('#loading .msg').textContent = msg;
     if (p >= 1) setTimeout(() => this.el('#loading').classList.add('hidden'), 300);
   }
 
   show(on) { this.hud.classList.toggle('hidden', !on); }
 
+  /** original message box sliding in from the left (huds frame 142–147) */
   notify(text, t = 2.5) {
-    const n = this.el('#notify');
-    n.innerHTML = fmt(text);
-    n.classList.add('on');
-    this.notifyT = t;
+    const m = this.el('#msg');
+    m.querySelector('.txt').innerHTML = fmt(text);
+    m.classList.add('on');
+    this.msgT = t;
   }
 
-  /** Big centred banner like the original "任务完成" / "你已严重受伤". */
+  /** original wide banner sliding in (huds frames 53–58): mission titles, 任务完成, 你已严重受伤… */
   big(text, sub = '', t = 3, cls = '') {
-    const b = this.el('#big');
+    const b = this.el('#banner');
     b.className = 'on ' + cls;
-    b.innerHTML = `<div>${fmt(text)}</div>${sub ? `<small>${fmt(sub)}</small>` : ''}`;
-    this.bigT = t;
+    b.querySelector('.txt').innerHTML = `${fmt(text)}${sub ? `<small>${fmt(sub)}</small>` : ''}`;
+    this.bannerT = t;
+    if (cls === 'red') this.overlay(this.g.player.dead && /被捕/.test(text) ? 'glass' : 'blood');
+  }
+
+  overlay(kind) {
+    const o = this.el('#overlay');
+    o.className = kind ? 'on ' + kind : '';
+    if (kind) setTimeout(() => { o.className = ''; }, 4200);
   }
 
   objective(text) {
     const o = this.el('#objective');
     o.innerHTML = text ? fmt(text) : '';
     o.classList.toggle('on', !!text);
+    if (text && text !== this.lastObjective) this.notify(text, 3.5);
+    this.lastObjective = text;
   }
 
   timer(sec) {
-    const t = this.el('#timer');
-    if (sec == null) { t.textContent = ''; return; }
+    if (!this.timerEl) return;
+    if (sec == null) { this.digits(this.timerEl, ''); return; }
     const s = Math.max(0, Math.ceil(sec));
-    t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    this.digits(this.timerEl, `${Math.floor(s / 60)}.${String(s % 60).padStart(2, '0')}`, s <= 10 ? 'red' : 'white');
   }
 
   damageFlash(a) {
@@ -116,23 +223,21 @@ export class Hud {
     requestAnimationFrame(() => { d.style.transition = 'opacity .8s'; d.style.opacity = 0; });
   }
 
-  /** Sequential dialogue with portraits; resolves when finished. lines: [[speaker, text], ...] */
+  /** Cut-scene dialogue: letterbox bars with subtitles, like the original cinematics HUD. */
   dialog(lines) {
     return new Promise((resolve) => {
-      const box = this.el('#dialog');
+      const box = this.el('#letterbox');
       let i = 0;
       const step = () => {
-        if (i >= lines.length) { box.classList.add('hidden'); cleanup(); resolve(); return; }
+        if (i >= lines.length) { box.classList.add('hidden'); this.hud.classList.remove('cine'); cleanup(); resolve(); return; }
         const [who, text, voice] = lines[i++];
         box.classList.remove('hidden');
-        this.el('#dialog .who').textContent = who || '';
-        this.el('#dialog .line').innerHTML = fmt(text);
-        const p = this.el('#dialog .portrait');
-        const r = PORTRAITS[who];
-        if (r) { p.style.display = ''; sprite(p, r.slice(1), 0.42, r[0]); } else p.style.display = 'none';
-        box.classList.toggle('right', who !== '强尼');
-        if (voice) this.g.audio.play(voice, { vol: 0.9 });
-        this.g.audio.play('int_tutorial_appear', { vol: 0.25 });
+        this.hud.classList.add('cine');
+        box.querySelector('.who').textContent = who || '';
+        box.querySelector('.line').innerHTML = fmt(text);
+        if (this.voice) try { this.voice.stop(); } catch { /* ended */ }
+        this.voice = null;
+        if (voice) this.g.audio.play(voice, { vol: 0.95 }).then((s) => { this.voice = s; });
       };
       const key = (e) => { if (['Space', 'Enter', 'KeyF'].includes(e.code)) { e.preventDefault(); step(); } };
       const click = () => step();
@@ -143,17 +248,29 @@ export class Hud {
     });
   }
 
-  screen(html) {
+  screen(html, cls = '') {
     const s = this.el('#screen');
     s.innerHTML = html;
-    s.classList.toggle('hidden', !html);
+    s.className = html ? cls : 'hidden';
     return s;
   }
 
   toggleMap(on) {
     const m = this.el('#mapview');
     m.classList.toggle('hidden', !on);
+    m.querySelector('.legend').textContent = `${this.g.t('menu', 91)} · M / Tab · 点击地图设置导航点`;
     if (on) this.drawBigMap();
+  }
+
+  iconFor(b) {
+    return b.icon ?? ICON[b.color] ?? null;
+  }
+
+  drawIcon(c, m, x, y, k = 1) {
+    if (!this.atlas) { this.atlas = new Image(); this.atlas.src = TEX + 'huds.webp'; }
+    if (!this.atlas.complete) return;
+    const [mx, my, mw, mh] = this.sprite.modules[m];
+    c.drawImage(this.atlas, mx, my, mw, mh, x - mw * k / 2, y - mh * k / 2, mw * k, mh * k);
   }
 
   drawBigMap() {
@@ -161,83 +278,119 @@ export class Hud {
     c.clearRect(0, 0, 1024, 1024);
     const toMap = (x, z) => [(x - M.x0) / M.scale, (z - M.z0) / M.scale];
     if (this.route) {
-      c.strokeStyle = '#ff2fb0'; c.lineWidth = 5; c.beginPath();
+      c.strokeStyle = '#ff2fb0'; c.lineWidth = 6; c.lineJoin = 'round'; c.beginPath();
       this.route.forEach(([x, z], i) => { const [u, v] = toMap(x, z); i ? c.lineTo(u, v) : c.moveTo(u, v); });
       c.stroke();
     }
     for (const b of this.blips) {
-      const [u, v] = toMap(b.x, b.z);
-      c.fillStyle = b.color; c.strokeStyle = '#000'; c.lineWidth = 3;
-      c.beginPath(); c.arc(u, v, 11, 0, 7); c.fill(); c.stroke();
-      if (b.label) { c.font = 'bold 22px sans-serif'; c.fillStyle = '#fff'; c.strokeText(b.label, u + 14, v + 7); c.fillText(b.label, u + 14, v + 7); }
+      const [u, v] = toMap(b.x, b.z), ic = this.iconFor(b);
+      if (ic != null && this.sprite) this.drawIcon(c, ic, u, v, 1.4);
+      else { c.fillStyle = b.color; c.beginPath(); c.arc(u, v, 9, 0, 7); c.fill(); }
+      if (b.label) { c.font = '22px GLFont, sans-serif'; c.lineWidth = 4; c.strokeStyle = '#000'; c.fillStyle = '#fff'; c.strokeText(b.label, u + 18, v + 8); c.fillText(b.label, u + 18, v + 8); }
     }
     const p = g.focus, [u, v] = toMap(p.x, p.z);
-    c.save(); c.translate(u, v); c.rotate(-g.camera.yaw + Math.PI);
-    c.fillStyle = '#fff'; c.strokeStyle = '#000'; c.lineWidth = 3;
-    c.beginPath(); c.moveTo(0, -18); c.lineTo(12, 14); c.lineTo(0, 7); c.lineTo(-12, 14); c.closePath(); c.fill(); c.stroke();
+    c.save(); c.translate(u, v); c.rotate(Math.PI - (g.player.vehicle ? g.player.vehicle.yaw : g.player.yaw));
+    if (this.sprite) this.drawIcon(c, 38, 0, 0, 1.8);
     c.restore();
   }
 
   drawRadar() {
-    const g = this.g, M = g.roads.map, c = this.radar, S = 360;
-    const p = g.focus, zoom = 1.6 + Math.min(1.2, (g.player.vehicle ? g.player.vehicle.speed : 0) / 30);
+    const g = this.g, M = g.roads.map, c = this.radar, S = 308, SH = 304;
+    const p = g.focus, zoom = 2.2 + Math.min(1.4, (g.player.vehicle ? g.player.vehicle.speed : 0) / 25);
     const rot = g.camera.yaw + Math.PI;
-    c.save();
-    c.clearRect(0, 0, S, S);
-    c.beginPath(); c.arc(S / 2, S / 2, S / 2 - 6, 0, 7); c.clip();
-    c.fillStyle = '#63a09f'; c.fillRect(0, 0, S, S);
-    c.translate(S / 2, S / 2);
-    c.rotate(rot);
-    c.scale(zoom, zoom);
     const u = (p.x - M.x0) / M.scale, v = (p.z - M.z0) / M.scale;
+    c.save();
+    c.fillStyle = '#5f9c9b'; c.fillRect(0, 0, S, SH);
+    c.translate(S / 2, SH / 2); c.rotate(rot); c.scale(zoom, zoom);
     if (this.mapImg.complete) c.drawImage(this.mapImg, -u, -v);
     if (this.route) {
-      c.strokeStyle = '#ff2fb0'; c.lineWidth = 3.5 / zoom * 1.6; c.beginPath();
+      c.strokeStyle = '#ff2fb0'; c.lineWidth = 3 / zoom * 2.2; c.lineJoin = 'round'; c.beginPath();
       this.route.forEach(([x, z], i) => { const a = (x - M.x0) / M.scale - u, b = (z - M.z0) / M.scale - v; i ? c.lineTo(a, b) : c.moveTo(a, b); });
       c.stroke();
     }
     c.restore();
-    // blips (clamped to the rim)
+    const cr = Math.cos(rot), sr = Math.sin(rot), lim = S / 2 - 16;
     for (const b of this.blips) {
-      let dx = ((b.x - M.x0) / M.scale - u) * zoom, dy = ((b.z - M.z0) / M.scale - v) * zoom;
-      const cr = Math.cos(rot), sr = Math.sin(rot);
+      const dx = ((b.x - M.x0) / M.scale - u) * zoom, dy = ((b.z - M.z0) / M.scale - v) * zoom;
       let rx = dx * cr - dy * sr, ry = dx * sr + dy * cr;
-      const L = Math.hypot(rx, ry), R = S / 2 - 18;
-      if (L > R) { rx *= R / L; ry *= R / L; }
-      c.fillStyle = b.color; c.strokeStyle = '#000'; c.lineWidth = 3;
-      c.beginPath(); c.arc(S / 2 + rx, S / 2 + ry, b.small ? 6 : 10, 0, 7); c.fill(); c.stroke();
+      const m = Math.max(Math.abs(rx), Math.abs(ry));
+      if (m > lim) { rx *= lim / m; ry *= lim / m; }
+      const ic = this.iconFor(b);
+      if (ic != null) this.drawIcon(c, ic, S / 2 + rx, SH / 2 + ry, b.small ? 1.0 : 1.3);
+      else { c.fillStyle = b.color; c.strokeStyle = '#000'; c.lineWidth = 3; c.beginPath(); c.arc(S / 2 + rx, SH / 2 + ry, 8, 0, 7); c.fill(); c.stroke(); }
     }
-    c.fillStyle = '#fff'; c.strokeStyle = '#000'; c.lineWidth = 3;
-    c.save(); c.translate(S / 2, S / 2);
+    // player: the original red arrow
+    c.save(); c.translate(S / 2, SH / 2);
     c.rotate(rot - (g.player.vehicle ? g.player.vehicle.yaw : g.player.yaw) - Math.PI);
-    c.beginPath(); c.moveTo(0, -16); c.lineTo(11, 12); c.lineTo(0, 6); c.lineTo(-11, 12); c.closePath(); c.fill(); c.stroke();
+    this.drawIcon(c, 38, 0, 0, 1.9);
     c.restore();
-    this.el('#radar .north').style.transform = `rotate(${rot}rad) translateY(-80px) rotate(${-rot}rad)`;
+    // "N" rides the frame edge
+    const nx = -sr, ny = -cr, k = 1 / Math.max(Math.abs(nx), Math.abs(ny));
+    this.north.dataset.x = 23 + 77 + nx * k * 80 - 13;
+    this.north.dataset.y = 24 + 76 + ny * k * 80 - 15;
   }
 
+  // ------------------------------------------------------------ per-frame
   update(dt) {
     const g = this.g, pl = g.player;
-    this.notifyT -= dt;
-    if (this.notifyT <= 0) this.el('#notify').classList.remove('on');
-    this.bigT -= dt;
-    if (this.bigT <= 0) this.el('#big').classList.remove('on');
-    this.el('.bar.hp i').style.width = Math.max(0, pl.health) + '%';
-    this.el('.bar.ar i').style.width = Math.max(0, pl.armor) + '%';
-    this.el('.bar.ar').style.display = pl.armor > 0 ? '' : 'none';
-    this.el('#money').textContent = '$' + Math.floor(g.money).toLocaleString('en-US');
-    const lv = g.police.level;
-    this.el('#wanted').innerHTML = lv ? Array.from({ length: 5 }, (_, i) => `<span class="${i < lv ? 'on' : ''}">★</span>`).join('') : '';
-    if (this.lastWeapon !== pl.weapon) {
-      this.lastWeapon = pl.weapon;
-      sprite(this.el('#weapon .icon'), ICONS[pl.weapon], 0.9);
+    if (!this.items) return;
+    this.msgT -= dt; if (this.msgT <= 0) this.el('#msg').classList.remove('on');
+    this.bannerT -= dt; if (this.bannerT <= 0) this.el('#banner').classList.remove('on');
+    const v = pl.vehicle;
+    // bars: on foot health + armour, in a vehicle the vehicle bar (purple, car icon) + health
+    const vmax = v ? (v.type === 'bike' ? 500 : 1000) : 1;
+    const row1 = v ? Math.max(0, v.health) / vmax : Math.max(0, pl.health) / 100;
+    const row2 = v ? Math.max(0, pl.health) / 100 : Math.max(0, pl.armor) / 100;
+    if (this.inVeh !== !!v) {
+      this.inVeh = !!v;
+      this.paint(this.bar1[1], v ? 24 : 21); this.paint(this.bar1[2], v ? 28 : 27);
+      this.paint(this.bar2[1], v ? 21 : 25); this.paint(this.bar2[2], v ? 27 : 31);
     }
-    const w = WEAPONS[pl.weapon], slot = pl.weapons[pl.weapon];
-    this.el('#weapon .ammo').textContent = w.melee ? '' : `${slot.clip} / ${slot.ammo}`;
-    const aiming = !pl.vehicle && !w.melee && (g.ctl.aim || g.ctl.fire);
-    const ch = this.el('#crosshair');
-    ch.className = aiming ? (w.scope ? 'scope' : 'on') : '';
-    const sp = this.el('#speedo');
-    sp.textContent = pl.vehicle ? `${Math.round(pl.vehicle.speed * 3.6)} km/h` : '';
+    this.bar1[1].style.clipPath = `inset(0 ${100 - row1 * 100}% 0 0)`;
+    this.bar2[1].style.clipPath = `inset(0 ${100 - row2 * 100}% 0 0)`;
+    for (const e of this.bar2) e.style.display = v || pl.armor > 0 ? '' : 'none';
+    // radio
+    const st = g.audio.station;
+    for (const e of this.radio) e.style.display = v ? '' : 'none';
+    if (v && this.station !== st) {
+      this.station = st;
+      this.paint(this.radio[2], st >= 0 ? RADIO_PLATE[st] : 151);
+      const w = +this.radio[2].dataset.w;
+      this.radio[2].dataset.x = 311 - w / 2;
+      this.layout();
+    }
+    // weapon
+    if (this.weapon !== pl.weapon) {
+      this.weapon = pl.weapon;
+      const [m, x, y] = WEAPON_ICON[pl.weapon] || WEAPON_ICON.fist;
+      this.paint(this.weaponIcon, m);
+      this.weaponIcon.dataset.x = x; this.weaponIcon.dataset.y = y;
+      this.layout();
+    }
+    const slot = pl.weapons[pl.weapon];
+    this.digits(this.ammo, slot && pl.weapon !== 'fist' && pl.weapon !== 'bat' ? `${slot.clip}/${slot.ammo}` : '', 'white', true);
+    // wanted badges
+    const lv = g.police.level;
+    this.badges.forEach((b, i) => { b.style.display = i < lv ? '' : 'none'; b.classList.toggle('blink', i < lv && g.police.unseen > 3); });
+    // money with original +/- popups
+    const money = Math.floor(g.money);
+    if (this.lastMoney !== null && money !== this.lastMoney) this.moneyPopup(money - this.lastMoney);
+    this.lastMoney = money;
+    this.digits(this.money, '$' + money.toLocaleString('en-US'), 'white');
+    // crosshair: the original target reticle
+    const w = g.weaponDef();
+    const aiming = !v && !w.melee && (g.ctl.aim || g.ctl.fire);
+    this.el('#crosshair').className = aiming ? (w.scope ? 'scope' : 'on') : '';
     this.drawRadar();
+    this.layout();
+  }
+
+  moneyPopup(delta) {
+    const d = document.createElement('div');
+    d.className = 'digits right popup';
+    d.dataset.x = 975; d.dataset.y = 206; d.dataset.a = 'tr';
+    this.hud.appendChild(d); this.items.push(d);
+    this.digits(d, (delta > 0 ? '+$' : '-$') + Math.abs(delta).toLocaleString('en-US'), delta > 0 ? 'green' : 'red');
+    setTimeout(() => { d.remove(); this.items.splice(this.items.indexOf(d), 1); }, 1800);
   }
 }

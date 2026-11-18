@@ -47,7 +47,7 @@ async function tail(m, v, dest, text, { speed = 0.6, lose = 170 } = {}) {
   m.unblip(b);
   // the target pulls up at its destination
   if (Math.hypot(v.pos.x - dest[0], v.pos.z - dest[1]) > 12) {
-    const h = g.world.height(dest[0], dest[1], 80);
+    const h = g.world.floor(dest[0], dest[1]);
     v.place(dest[0], h > -Infinity ? h : v.pos.y, dest[1], v.yaw);
   }
   v.vf = 0;
@@ -134,7 +134,7 @@ export const CHX = [
       const [dx, dz] = road(m, ...GOLF);
       await tail(m, lauf, [dx, dz], 61);
       const [px, pz] = road(m, GOLF[0], GOLF[1], 1);
-      vega.root.visible = true; vega.pos.set(px, g.world.height(px, pz, 80), pz); vega.goal = [px + 25, pz + 10, false]; vega.ai = (dt) => m.pedAI(vega, dt);
+      vega.root.visible = true; vega.pos.set(px, g.world.floor(px, pz), pz); vega.goal = [px + 25, pz + 10, false]; vega.ai = (dt) => m.pedAI(vega, dt);
       lauf.driver = null;
       await m.getIn(lauf, 62);
       bump(m, 2);

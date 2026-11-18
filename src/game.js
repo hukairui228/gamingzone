@@ -60,6 +60,7 @@ export class Game {
   async boot() {
     const H = this.hud;
     H.loading(0.05, '载入迈阿密城市模型…');
+    if (this.input.isTouch) H.ready.then(() => this.input.buildTouch(H));
     await Promise.all([this.world.load(), this.roads.load(), loadCity(this.scene)]);
     H.loading(0.55, '载入角色与动画…');
     await this.player.load();
@@ -94,7 +95,7 @@ export class Game {
   placePlayer(x, z, yaw = 0) {
     const pl = this.player;
     if (pl.vehicle) pl.exit();
-    const h = this.world.height(x, z, 80);
+    const h = this.world.floor(x, z);
     pl.pos.set(x, h > -Infinity ? h : 2, z);
     pl.yaw = yaw; pl.vy = 0;
     this.camera.yaw = yaw;
@@ -121,7 +122,6 @@ export class Game {
     this.audio.music('m_menu');
     const has = !!localStorage.getItem('gm_save');
     const s = this.hud.screen(`
-      <h1>GANGSTAR</h1><h2>雄霸迈阿密</h2>
       <div class="menu">
         ${has ? '<button data-a="continue">继续游戏</button>' : ''}
         <button data-a="new">${this.t('menu', 38) || '新游戏'}</button>
@@ -129,7 +129,7 @@ export class Game {
         <button data-a="missions">任务选择</button>
         <button data-a="settings">${this.t('menu', 51) || '设置'}</button>
         <button data-a="help">操作说明</button>
-      </div>`);
+      </div>`, 'title');
     s.onclick = (e) => {
       const a = e.target.dataset.a;
       if (!a) return;
@@ -588,6 +588,7 @@ export class Game {
       if (Math.hypot(this.focus.x - this.waypoint.x, this.focus.z - this.waypoint.z) < 15 && !this.mission) { this.waypoint = null; this.hud.route = null; }
     }
     this.hud.blips = this.collectBlips();
+    this.input.setTouchMode(!!pl.vehicle);
     this.fx.update(dt);
     this.gfx.update(dt, this.focus);
     this.hud.update(dt);

@@ -45,7 +45,7 @@ export const CH3 = [
     async run(m) {
       const g = m.g, vi = v3(2, 'INTRO'), vm = v3(2, 'MIDDLE');
       const [bx, bz, byaw] = spot(m, ...LOC.betty, 1);
-      await ally(m, 'char_betty', bx + 1.2, bz, 'female');
+      await ally(m, 'char_betty', ...spot(m, bx, bz, 1, 1.5).slice(0, 2), 'female');
       await ally(m, 'char_joey', ...spot(m, bx, bz, 1, 2).slice(0, 2));
       const lc = await ally(m, 'char_lc', ...spot(m, bx, bz, 1, -2).slice(0, 2));
       m.protect(lc, ['global', 328]);
@@ -78,7 +78,7 @@ export const CH3 = [
     async run(m) {
       const g = m.g, vi = v3(3, 'INTRO'), vm = v3(3, 'MIDDLE');
       const [bx, bz, byaw] = spot(m, ...LOC.betty, 1);
-      await ally(m, 'char_joey', bx + 1.2, bz);
+      await ally(m, 'char_joey', ...spot(m, bx, bz, 1, 1.5).slice(0, 2));
       const lc = await ally(m, 'char_lc', ...spot(m, bx, bz, 1, -2).slice(0, 2));
       m.protect(lc, ['global', 328]);
       // the government's secret weapon (flamethrower in the original) is handed over as the rocket launcher
@@ -112,7 +112,7 @@ export const CH3 = [
       const g = m.g, vi = v3(4, 'INTRO'), vm = v3(4, 'MIDDLE'), ve = v3(4, 'END');
       g.gfx.hour = 23;
       const [bx, bz] = spot(m, ...LOC.betty, 1);
-      const betty = await ally(m, 'char_betty', bx + 1.2, bz, 'female');
+      const betty = await ally(m, 'char_betty', ...spot(m, bx, bz, 1, 1.5).slice(0, 2), 'female');
       m.protect(betty, ['global', 327]);
       await m.say([['强尼', 85, vi()], ['贝蒂', 86, vi()], ['强尼', 87, vi()], ['贝蒂', 88, vi()], ['贝蒂', 89, vi()], ['强尼', 90, vi()],
         ['贝蒂', 91, vi()], ['强尼', 92, vi()], ['贝蒂', 93, vi()], ['强尼', 94, vi()], ['贝蒂', 95, vi()]]);
@@ -135,7 +135,7 @@ export const CH3 = [
     async run(m) {
       const g = m.g, vi = v3(5, 'INTRO'), vm = v3(5, 'MIDDLE');
       const [hx, hz] = spot(m, ...LOC.lcHotel, 1);
-      await ally(m, 'char_joey', hx + 1.2, hz);
+      await ally(m, 'char_joey', ...spot(m, hx, hz, 1, 1.5).slice(0, 2));
       await ally(m, 'char_lc', ...spot(m, hx, hz, 1, 2).slice(0, 2));
       await ally(m, 'char_betty', ...spot(m, hx, hz, 1, -2).slice(0, 2), 'female');
       await m.say([['乔伊', 115, vi()], ['强尼', 116, vi()], ['LC', 117, vi()], ['LC', 118, vi()], ['贝蒂', 119, vi()], ['乔伊', 120, vi()],
@@ -156,7 +156,7 @@ export const CH3 = [
     async run(m) {
       const g = m.g, vi = v3(6, 'INTRO'), vm = v3(6, 'MIDDLE'), ve = v3(6, 'END');
       const [hx, hz, hyaw] = spot(m, ...LOC.lcHotel, 1);
-      const lc = await ally(m, 'char_lc', hx + 1.2, hz);
+      const lc = await ally(m, 'char_lc', ...spot(m, hx, hz, 1, 1.5).slice(0, 2));
       await ally(m, 'char_betty', ...spot(m, hx, hz, 1, -2).slice(0, 2), 'female');
       m.protect(lc, ['global', 328]);
       await m.say([['强尼', 132, vi()], ['LC', 133, vi()], ['贝蒂', 134, vi()], ['LC', 135, vi()], ['贝蒂', 136, vi()], ['强尼', 137, vi()],
@@ -193,7 +193,7 @@ export const CH3 = [
     async run(m) {
       const g = m.g, vi = v3(7, 'INTRO'), va = v3(7, 'MIDDLE_A'), vb = v3(7, 'MIDDLE_B'), vc = v3(7, 'MIDDLE_C'), vea = v3(7, 'END_A'), ve = v3(7, 'END');
       const [hx, hz, hyaw] = spot(m, ...LOC.lcHotel, 1);
-      const lc = await ally(m, 'char_lc', hx + 1.2, hz);
+      const lc = await ally(m, 'char_lc', ...spot(m, hx, hz, 1, 1.5).slice(0, 2));
       const joey = await ally(m, 'char_joey', ...spot(m, hx, hz, 1, 2).slice(0, 2));
       m.protect(lc, ['global', 328]);
       await m.say([['LC', 161, vi()], ['乔伊', 162, vi()], ['强尼', 163, vi()], ['LC', 164, vi()], ['LC', 165, vi()], ['乔伊', 166, vi()],

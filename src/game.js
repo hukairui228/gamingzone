@@ -102,6 +102,39 @@ export class Game {
     this.camera.target.set(x, pl.pos.y + 1.5, z);
   }
 
+  /**
+   * Safety net: if the player or their vehicle ends up below the street surface (through a gap in the original
+   * collision mesh), put them back on the nearest road instead of letting them fall forever.
+   */
+  keepAboveGround(dt) {
+    const pl = this.player, b = pl.vehicle || pl;
+    if (b.type === 'heli' || b.type === 'boat' || pl.dead) { this.lostT = 0; return; }
+    const f = this.world.floor(b.pos.x, b.pos.z);
+    if (f > -Infinity) this.lastFloor = f;
+    // under the street surface, or dropping through a hole in the land mesh
+    const lost = f > -Infinity ? b.pos.y < f - 1.2
+      : !this.world.isWater(b.pos.x, b.pos.z) && b.pos.y < (this.lastFloor ?? 0) - 1.5;
+    if (!lost) { this.lostT = 0; return; }
+    this.lostT = (this.lostT || 0) + dt;
+    if (this.lostT < 0.2) return;
+    this.lostT = 0;
+    const n = this.roads.nearest(b.pos.x, b.pos.z);
+    if (!n) return;
+    const e = this.roads.edges[n.e], pt = this.roads.point(e, 1, n.s, 0, {});
+    const y = this.world.floor(pt.x, pt.z);
+    if (!(y > -Infinity)) return;
+    if (pl.vehicle) {
+      const v = pl.vehicle;
+      const fwd = Math.sin(v.yaw) * pt.tx + Math.cos(v.yaw) * pt.tz >= 0 ? 1 : -1;
+      v.place(pt.x, y + 0.3, pt.z, Math.atan2(pt.tx * fwd, pt.tz * fwd));
+      v.onGround = false; v.health = Math.max(v.health, 1);
+    } else {
+      pl.pos.set(pt.x, y + 0.2, pt.z); pl.vy = 0;
+    }
+    this.camera.target.set(pt.x, y + 1.5, pt.z);
+    if (this.camera.pos) this.camera.pos.set(pt.x - Math.sin(b.yaw || 0) * 6, y + 3, pt.z - Math.cos(b.yaw || 0) * 6);
+  }
+
   vehicles() {
     const out = [...this.traffic.cars, ...this.parked];
     if (this.player.vehicle && !out.includes(this.player.vehicle)) out.push(this.player.vehicle);
@@ -531,6 +564,7 @@ export class Game {
     this.camera.update(dt, ctl, pl);
     pl.update(dt, ctl, this.camera);
     pl.speedNow = Math.hypot(ctl.x, ctl.y) * (ctl.sprint ? 2 : 1);
+    this.keepAboveGround(dt);
     this.focus.copy(pl.vehicle ? pl.vehicle.pos : pl.pos);
     this.traffic.update(dt);
     this.peds.update(dt);

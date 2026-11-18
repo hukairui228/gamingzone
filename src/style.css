@@ -58,7 +58,11 @@ b { color: #ffd23c; font-weight: normal; }
 #overlay.blood { background: rgba(120, 0, 0, .35); }
 #overlay.blood::after, #overlay.glass::after { content: ''; position: absolute; inset: 0; background: var(--cin) no-repeat;
   mix-blend-mode: multiply; }
-#overlay.blood::after { background-size: calc(100vw * 512 / 320) calc(100vh * 512 / 250); background-position: calc(-180 * 100vw / 320) calc(-3 * 100vh / 250); }
+/* the splatter sprite is a black stencil that the original tints blood-red: use it as a mask over a red fill */
+#overlay.blood::after { background: #8a0010; mix-blend-mode: normal; opacity: .85;
+  -webkit-mask: var(--cin) no-repeat; mask: var(--cin) no-repeat;
+  -webkit-mask-size: calc(100vw * 512 / 320) calc(100vh * 512 / 250); mask-size: calc(100vw * 512 / 320) calc(100vh * 512 / 250);
+  -webkit-mask-position: calc(-180 * 100vw / 320) calc(-3 * 100vh / 250); mask-position: calc(-180 * 100vw / 320) calc(-3 * 100vh / 250); }
 #overlay.glass::after { background-size: calc(100vw * 512 / 469) calc(100vh * 512 / 243); background-position: calc(-40 * 100vw / 469) calc(-257 * 100vh / 243); }
 #damage { position: fixed; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, #c00010cc 100%); }
 

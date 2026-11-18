@@ -227,7 +227,11 @@ export class Player {
       }
     }
     // gravity / ground
-    const gh = g.world.height(this.pos.x, this.pos.z, this.pos.y + 0.5, 0.6);
+    let gh = g.world.height(this.pos.x, this.pos.z, this.pos.y + 0.5, 0.6);
+    // ground rose sharply right here (raised plaza edge without a wall): step up rather than fall through the city
+    if (gh === -Infinity) gh = g.world.height(this.pos.x, this.pos.z, this.pos.y + 0.5, 1.6);
+    // a hole in the land mesh (not sea): walk over it
+    if (gh === -Infinity && this.grounded && !g.world.isWater(this.pos.x, this.pos.z)) gh = this.pos.y;
     if (ctl.jump && this.grounded && this.action <= 0) {
       this.vy = 5.2; this.grounded = false;
       this.c.play(speed > 3 ? 'fo__player__jump_run' : 'fo__player__jump_walk', { loop: false, fade: 0.1 });

@@ -72,6 +72,9 @@ export class Vehicle {
     this.rpm = 0;
     this.impact = 0;
     this.alt = 0;
+    // sprung body: pitch/roll offsets that react to acceleration, braking and cornering
+    this.bp = 0; this.bpv = 0; this.br = 0; this.brv = 0; this.bh = 0; this.bhv = 0;
+    this.yawRate = 0; this.prevVf = 0;
   }
 
   async load() {
@@ -155,6 +158,7 @@ export class Vehicle {
         yawRate = Math.max(-cap, Math.min(cap, yawRate));
       }
       this.yaw -= yawRate * dt;
+      this.yawRate = yawRate;
       const grip = ctl.handbrake && !boat ? 1.2 : d.grip;
       this.vs += yawRate * this.vf * (boat ? 0.25 : 0.08) * dt * (ctl.handbrake ? 3 : 1);
       this.vs -= this.vs * Math.min(1, grip * dt);
@@ -206,7 +210,12 @@ export class Vehicle {
       const w = this.wheelPos[i];
       const wx = this.pos.x + w.x * cy + w.z * sy, wz = this.pos.z - w.x * sy + w.z * cy;
       let h = world.height(wx, wz, this.pos.y + 0.3, 0.35);
-      if (h === -Infinity) h = -3;
+      if (h === -Infinity) {
+        // nothing within a normal step: the surface rose sharply (kerb of a raised plaza, steep ramp) — ride up onto
+        // it instead of dropping through the world; only open water has no ground at all
+        const up = world.height(wx, wz, this.pos.y + 0.3, 2.2);
+        h = up > -Infinity ? up : world.isWater(wx, wz) ? -3 : this.pos.y; // a hole in the land mesh: keep rolling
+      }
       gh.push(h);
     }
     const hf = (gh[0] + gh[1]) / 2, hb = (gh[2] + gh[3]) / 2, hl = (gh[0] + gh[2]) / 2, hr = (gh[1] + gh[3]) / 2;
@@ -215,6 +224,7 @@ export class Vehicle {
     this.pos.y += this.vy * dt;
     if (this.pos.y <= groundY) {
       if (!this.onGround && this.vy < -9) this.impact = Math.max(this.impact, -this.vy * 0.5);
+      if (!this.onGround && this.vy < -2) this.bump(Math.min(2.5, -this.vy * 0.25));
       this.pos.y = groundY;
       this.vy = Math.max(0, this.vy);
       this.onGround = true;
@@ -225,26 +235,52 @@ export class Vehicle {
       const ramp = (hf - hb) / this.wheelBase;
       this.vy = ramp > 0.05 ? ramp * this.vf : 0; // ramps launch the car
       this.pitch += (Math.atan2(hf - hb, this.wheelBase) - this.pitch) * Math.min(1, dt * 10);
-      const roll = this.type === 'bike' ? -this.steer * Math.min(1, this.speed / 12) * 0.9 : Math.atan2(hl - hr, this.track);
+      // bikes lean into the turn (positive roll = top towards the right-hand side)
+      const roll = this.type === 'bike' ? this.steer * Math.min(1, this.speed / 12) * 0.9 : Math.atan2(hl - hr, this.track);
       this.roll += (roll - this.roll) * Math.min(1, dt * (this.type === 'bike' ? 5 : 10));
     } else {
       this.pitch += (-0.05 - this.pitch) * dt;
     }
-    const lean = this.type === 'bike' ? 0 : THREE.MathUtils.clamp(this.vs * 0.02 + this.steer * this.vf * 0.004, -0.08, 0.08);
-    this.pose(this.roll + lean);
+    this.suspension(dt);
+    this.pose(this.roll + this.br, this.bp);
 
-    this.spin += this.vf * dt / this.wheelR;
-    this.pivots.forEach((p) => { p.rotation.x = -this.spin; });
+    // wheels roll forward (+x in the original Z-up wheel frame); the per-frame step is capped below the rim's
+    // symmetry angle so fast spin never strobes into wheels that look frozen or turning backwards
+    const step = this.vf * dt / this.wheelR;
+    this.spin += Math.sign(step) * Math.min(Math.abs(step), 0.42);
+    this.pivots.forEach((p) => { p.rotation.x = this.spin; });
     const front = this.wheels.filter((w) => /front/.test(w.name));
     for (const w of front) w.rotation.z = -this.steer;
     this.rpm = THREE.MathUtils.clamp(Math.abs(this.vf) / max, 0, 1);
-    if (this.pos.y < -2.5 && this.health > 0) { this.health = 0; this.sunk = true; }
+    // only open water swallows cars; anywhere with land under it the game lifts the car back up instead
+    if (this.pos.y < -2.5 && this.health > 0 && world.floor(this.pos.x, this.pos.z) === -Infinity && world.isWater(this.pos.x, this.pos.z)) { this.health = 0; this.sunk = true; }
   }
 
-  pose(roll) {
+  /** Damped springs for body pitch (squat/dive), roll (outward lean in corners) and heave (bumps, landings). */
+  suspension(dt) {
+    const h = Math.min(dt, 1 / 30);
+    const acc = (this.vf - this.prevVf) / Math.max(dt, 1e-3);
+    this.prevVf = this.vf;
+    const bike = this.type === 'bike';
+    const pitchT = this.onGround ? THREE.MathUtils.clamp(acc * (bike ? 0.002 : 0.0045), -0.07, 0.05) : 0;
+    const lat = this.onGround ? this.vf * this.yawRate : 0; // + when turning right
+    const rollT = bike ? 0 : THREE.MathUtils.clamp(-lat * 0.0075, -0.085, 0.085);
+    const k = 140, c = 13; // slightly underdamped: settles with a small rebound
+    for (let n = 0; n < Math.ceil(dt / h); n++) {
+      this.bpv += (k * (pitchT - this.bp) - c * this.bpv) * h; this.bp += this.bpv * h;
+      this.brv += (k * (rollT - this.br) - c * this.brv) * h; this.br += this.brv * h;
+      this.bhv += (-k * this.bh - c * this.bhv) * h; this.bh += this.bhv * h;
+    }
+    if (this.mesh) this.mesh.position.y = THREE.MathUtils.clamp(this.bh, -0.12, 0.08);
+  }
+
+  /** a jolt to the springs (landing, kerbs, hits) */
+  bump(v) { this.bhv -= v; this.bpv += (Math.random() - 0.5) * v * 0.4; }
+
+  pose(roll, bodyPitch = 0) {
     this.root.rotation.set(0, 0, 0);
     this.root.rotateY(this.yaw);
-    this.root.rotateX(-this.pitch);
+    this.root.rotateX(-(this.pitch + bodyPitch));
     this.root.rotateZ(roll);
   }
 

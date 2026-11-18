@@ -1,7 +1,7 @@
 """Build a self-contained web deployment in deploy/: one HTML page (JS + CSS inlined) plus asset packs.
 
 Hosts that limit file count/size (e.g. a private claude.ai page: <=511 files, <=15 MB each, <=256 MB total)
-can serve it as-is. Run after `npm run build`:  python3 tools/pack_web.py [--no-hd]
+can serve it as-is. Run after `NO_PUBLIC=1 npx vite build`:  python3 tools/pack_web.py [--no-hd] [--full-audio]
 """
 import json, os, re, shutil, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -41,9 +41,14 @@ def encode_audio(tmp):
         dst = os.path.join(OUT, 'assets', 'audio', f[:-4] + '.mp4') if music else os.path.join(tmp, f)
         jobs.append((src, dst, music))
 
+    full = '--full-audio' in sys.argv
+
     def run(job):
         src, dst, music = job
         os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if full:  # keep the extraction-quality AAC files untouched
+            shutil.copyfile(os.path.join(SRC, 'audio', os.path.basename(dst)[:-4] + '.m4a'), dst)
+            return
         if os.path.exists(dst):
             return
         args = ['-b:a', '80k'] if music else ['-ac', '1', '-b:a', '40k']
@@ -65,7 +70,7 @@ def main():
             if x.startswith('pack_') or x == 'packs.json':
                 os.remove(os.path.join(OUT, 'assets', x))
         del keep
-    tmp = os.path.join(ROOT, '.extract_cache', 'web_audio')
+    tmp = os.path.join(ROOT, '.extract_cache', 'web_audio_full' if '--full-audio' in sys.argv else 'web_audio')
     encode_audio(tmp)
 
     files = []

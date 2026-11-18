@@ -517,6 +517,7 @@ export class Game {
       this.gfx.update(dt, this.gfx.camera.position);
     }
     input.endFrame();
+    if (this.state === 'play') this.gfx.adapt(dt);
     this.gfx.render();
   }
 

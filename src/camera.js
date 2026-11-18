@@ -40,6 +40,11 @@ export class GameCamera {
       fov = 62 + Math.min(10, v.speed * 0.2);
       _t.set(v.pos.x, v.pos.y + v.height * 0.7, v.pos.z);
     } else {
+      // phones: when the player is not dragging the view, swing gently behind the character while moving
+      if (this.g.input.isTouch && Math.hypot(ctl.x, ctl.y) > 0.3 && performance.now() - (this.g.input.lastLook || 0) > 900) {
+        let d = player.yaw - this.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+        if (Math.abs(d) < 2.6) this.yaw += d * Math.min(1, dt * 1.4);
+      }
       const aiming = ctl.aim || (ctl.fire && !this.g.weaponDef().melee);
       const scope = aiming && this.g.weaponDef().scope;
       dist = aiming ? 2.4 : this.dist;

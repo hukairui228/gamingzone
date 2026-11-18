@@ -161,7 +161,7 @@ export class Hud {
 
   get scale() {
     const s = Math.min(innerWidth / W0, innerHeight / H0);
-    return Math.max(0.55, Math.min(1.35, s * (this.g.settings?.hudScale || 1)));
+    return Math.max(0.5, Math.min(1.35, s * (this.g.settings?.hudScale || 1)));
   }
 
   /** safe-area insets (notch / Dynamic Island) in px */
@@ -178,18 +178,18 @@ export class Hud {
   layout() {
     if (!this.items) return;
     const s = this.scale;
-    const ins = this.insets();
+    const ins = this._ins = this.insets();
     this.hud.style.setProperty('--s', s);
     for (const d of this.items) {
       const x = +d.dataset.x, y = +d.dataset.y, a = d.dataset.a;
-      let px = x * s + ins.l, py = y * s + ins.t;
-      if (a[1] === 'r') px = innerWidth - ins.r - (W0 - x) * s;
-      if (a[1] === 'c') px = innerWidth / 2 + (x - W0 / 2) * s;
-      if (a[0] === 'b') py = innerHeight - ins.b - (H0 - y) * s;
-      d.style.left = px + 'px'; d.style.top = py + 'px';
-      if (d.id === 'minimap') { d.style.width = d.dataset.w * s + 'px'; d.style.height = d.dataset.h * s + 'px'; }
-      else d.style.zoom = s;
-      if (d.style.zoom) { d.style.left = px / s + 'px'; d.style.top = py / s + 'px'; }
+      // k > 1 (touch controls) scales a whole cluster about its screen corner, so buttons never overlap
+      const zs = s * +(d.dataset.k || 1);
+      let px = x * zs + ins.l, py = y * zs + ins.t;
+      if (a[1] === 'r') px = innerWidth - ins.r - (W0 - x) * zs;
+      if (a[1] === 'c') px = innerWidth / 2 + (x - W0 / 2) * zs;
+      if (a[0] === 'b') py = innerHeight - ins.b - (H0 - y) * zs;
+      if (d.id === 'minimap') { d.style.left = px + 'px'; d.style.top = py + 'px'; d.style.width = d.dataset.w * s + 'px'; d.style.height = d.dataset.h * s + 'px'; }
+      else { d.style.zoom = zs; d.style.left = px / zs + 'px'; d.style.top = py / zs + 'px'; }
     }
   }
 
@@ -408,7 +408,14 @@ export class Hud {
     const aiming = !v && !w.melee && (g.ctl.aim || g.ctl.fire);
     this.el('#crosshair').className = aiming ? (w.scope ? 'scope' : 'on') : '';
     this.drawRadar();
-    this.layout();
+    this.placeOne(this.north);
+  }
+
+  /** reposition a single top-left element without a full layout pass */
+  placeOne(d) {
+    const s = this.scale, ins = this._ins || { l: 0, t: 0 };
+    d.style.left = (+d.dataset.x * s + ins.l) / s + 'px';
+    d.style.top = (+d.dataset.y * s + ins.t) / s + 'px';
   }
 
   moneyPopup(delta) {

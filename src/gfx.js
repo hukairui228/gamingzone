@@ -99,7 +99,10 @@ export class Gfx {
 
     this.hour = 11;
     this.envTimer = 0;
-    this.setQuality(localStorage.getItem('gm_quality') || (matchMedia('(pointer: coarse)').matches ? 'medium' : 'high'));
+    // phones default to high too: modern phone GPUs handle it, and dynamic resolution keeps the frame rate up
+    this.touch = matchMedia('(pointer: coarse)').matches;
+    this.dyn = 1; this.frameT = 0; this.frames = 0; this.dynT = 0;
+    this.setQuality(localStorage.getItem('gm_quality2') || 'high');
     addEventListener('resize', () => this.resize());
   }
 
@@ -132,15 +135,16 @@ export class Gfx {
   setQuality(q) {
     if (!QUALITY[q]) q = 'high';
     this.quality = q;
-    localStorage.setItem('gm_quality', q);
+    try { localStorage.setItem('gm_quality2', q); } catch { /* private mode */ }
     const Q = this.Q = QUALITY[q];
     const r = this.renderer;
-    r.setPixelRatio(Math.min(devicePixelRatio || 1, Q.pr));
+    r.setPixelRatio(this.targetPR());
     r.setSize(innerWidth, innerHeight, false);
     this.sun.castShadow = Q.shadow > 0;
     if (Q.shadow) {
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
-      this.sun.shadow.mapSize.set(Q.shadow, Q.shadow);
+      const sm = this.touch ? Math.min(Q.shadow, 2048) : Q.shadow;
+      this.sun.shadow.mapSize.set(sm, sm);
       const c = this.sun.shadow.camera;
       c.left = -Q.ext; c.right = Q.ext; c.top = Q.ext; c.bottom = -Q.ext; c.near = 1; c.far = 1400;
       c.updateProjectionMatrix();
@@ -181,6 +185,32 @@ export class Gfx {
     this.grade = new ShaderPass(Grade);
     this.composer.addPass(this.grade);
     if (Q.smaa) this.composer.addPass(new SMAAPass(w, h));
+  }
+
+  /** pixel ratio: phones render near native sharpness (their screens are 3x), scaled by the dynamic-resolution factor */
+  targetPR() {
+    const cap = this.touch ? { low: 1, medium: 1.5, high: 2, ultra: 2.5 }[this.quality] : this.Q.pr;
+    return Math.max(0.75, Math.min(devicePixelRatio || 1, cap) * this.dyn);
+  }
+
+  applyResolution() {
+    const pr = this.targetPR();
+    this.renderer.setPixelRatio(pr);
+    this.renderer.setSize(innerWidth, innerHeight, false);
+    this.composer.setPixelRatio(pr);
+    this.composer.setSize(innerWidth, innerHeight);
+  }
+
+  /** dynamic resolution: hold ~55-60 fps by trading render resolution */
+  adapt(dt) {
+    this.frameT += dt; this.frames++;
+    if (this.frameT < 1.5) return;
+    const avg = this.frameT / this.frames;
+    this.frameT = 0; this.frames = 0;
+    const before = this.dyn;
+    if (avg > 1 / 45) this.dyn = Math.max(0.55, this.dyn - 0.1);
+    else if (avg < 1 / 57) this.dyn = Math.min(1, this.dyn + 0.05);
+    if (Math.abs(this.dyn - before) > 0.001) this.applyResolution();
   }
 
   resize() {

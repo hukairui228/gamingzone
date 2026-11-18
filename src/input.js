@@ -37,7 +37,8 @@ export class Input {
     root.id = 'touch';
     document.getElementById('ui').appendChild(root);
     const T = this.touch;
-    const mk = (m, x, y, a, flip = 0) => hud.mod(m, x, y, { anchor: a, flip, parent: root });
+    // touch controls are drawn 1.15x the HUD scale so they are comfortable thumb targets
+    const mk = (m, x, y, a, flip = 0) => { const d = hud.mod(m, x, y, { anchor: a, flip, parent: root }); d.dataset.k = 1.15; return d; };
     const base = mk(1, 40, 500, 'bl'), knob = mk(0, 69, 529, 'bl');
     const button = (bg, icon, x, y, ix, iy, name, hold, flip = 0) => {
       const b = mk(bg, x, y, 'br'), i = mk(icon, ix, iy, 'br', flip);
@@ -63,31 +64,46 @@ export class Input {
     this.driving = null;
     this.setTouchMode(false);
     hud.layout();
-    let sid = null, sx = 0, sy = 0, lid = null, lx = 0, ly = 0;
-    const R = 50;
+    // floating stick: it recentres where the thumb lands, the knob follows the thumb 1:1,
+    // with a small dead zone and a smooth response curve
+    let sid = null, sx = 0, sy = 0, ox = 0, oy = 0, lid = null, lx = 0, ly = 0;
+    // base and knob share the same rest centre (original layout); translate is in unzoomed px
+    const place = (el, dx, dy) => { const z = parseFloat(el.style.zoom) || 1; el.style.translate = `${dx / z}px ${dy / z}px`; };
     this.canvas.addEventListener('pointerdown', (e) => {
-      if (e.pointerType !== 'touch') return;
-      if (e.clientX < innerWidth * 0.4 && sid === null) {
+      if (e.pointerType === 'mouse') return;
+      if (e.clientX < innerWidth * 0.45 && sid === null) {
         sid = e.pointerId;
+        base.style.translate = ''; knob.style.translate = '';
         const r = base.getBoundingClientRect();
-        sx = r.left + r.width / 2; sy = r.top + r.height / 2;
+        sx = e.clientX; sy = e.clientY;
+        ox = sx - (r.left + r.width / 2); oy = sy - (r.top + r.height / 2);
+        place(base, ox, oy); place(knob, ox, oy);
+        base.classList.add('pressed');
       } else if (lid === null) { lid = e.pointerId; lx = e.clientX; ly = e.clientY; }
+      this.canvas.setPointerCapture?.(e.pointerId);
     });
-    addEventListener('pointermove', (e) => {
+    this.canvas.addEventListener('pointermove', (e) => {
       if (e.pointerId === sid) {
-        let dx = (e.clientX - sx) / R, dy = (e.clientY - sy) / R;
-        const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; }
-        T.move.x = dx; T.move.y = dy;
-        knob.style.translate = `${dx * 28}px ${dy * 28}px`;
+        const R = Math.max(42, base.getBoundingClientRect().width * 0.42);
+        let dx = e.clientX - sx, dy = e.clientY - sy;
+        const l = Math.hypot(dx, dy);
+        if (l > R) { dx *= R / l; dy *= R / l; }
+        place(knob, ox + dx, oy + dy);
+        // dead zone, then a gentle curve: small tilt walks, full tilt runs
+        let m = Math.min(1, l / R);
+        m = m < 0.12 ? 0 : Math.pow((m - 0.12) / 0.88, 1.25);
+        const d = Math.hypot(dx, dy) || 1;
+        T.move.x = dx / d * m; T.move.y = dy / d * m;
       } else if (e.pointerId === lid) {
-        T.look.dx += (e.clientX - lx) * 1.4; T.look.dy += (e.clientY - ly) * 1.4; lx = e.clientX; ly = e.clientY;
+        T.look.dx += (e.clientX - lx) * 1.5; T.look.dy += (e.clientY - ly) * 1.5; lx = e.clientX; ly = e.clientY;
+        this.lastLook = performance.now();
       }
     });
     const end = (e) => {
-      if (e.pointerId === sid) { sid = null; T.move.x = T.move.y = 0; knob.style.translate = ''; }
+      if (e.pointerId === sid) { sid = null; T.move.x = T.move.y = 0; base.style.translate = ''; knob.style.translate = ''; base.classList.remove('pressed'); }
       if (e.pointerId === lid) lid = null;
     };
-    addEventListener('pointerup', end); addEventListener('pointercancel', end);
+    this.canvas.addEventListener('pointerup', end); this.canvas.addEventListener('pointercancel', end);
   }
 
   /** show the on-foot or the driving button set */
@@ -107,7 +123,7 @@ export class Input {
     const t = this.touch;
     const s = {
       x: (this.down('KeyD', 'ArrowRight') ? 1 : 0) - (this.down('KeyA', 'ArrowLeft') ? 1 : 0) + t.move.x,
-      y: (this.down('KeyW', 'ArrowUp') ? 1 : 0) - (this.down('KeyS', 'ArrowDown') ? 1 : 0) - (this.driving ? 0 : t.move.y)
+      y: (this.down('KeyW', 'ArrowUp') ? 1 : 0) - (this.down('KeyS', 'ArrowDown') ? 1 : 0) - t.move.y
         + (t.buttons.has('gas') ? 1 : 0) - (t.buttons.has('brake') ? 1 : 0),
       lookX: this.mouse.dx + t.look.dx, lookY: this.mouse.dy + t.look.dy,
       fire: this.mouse.down || t.buttons.has('fire') || this.down('KeyJ'),

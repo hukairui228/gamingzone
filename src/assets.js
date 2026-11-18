@@ -11,7 +11,7 @@ export function setAnisotropy(n) { maxAniso = n; }
 
 /** 'high'/'ultra' use the AI-upscaled HD texture pack when it was generated (tools/upscale_textures.py). */
 function wantHD() {
-  try { return ['high', 'ultra'].includes(localStorage.getItem('gm_quality') || 'high'); } catch { return true; }
+  try { return ['high', 'ultra'].includes(localStorage.getItem('gm_quality2') || 'high'); } catch { return true; }
 }
 
 // Packed deployment (tools/pack_web.py): assets live inside a few large pack files listed in packs.json.
@@ -42,8 +42,9 @@ async function packedBlob(path) {
 export async function assetURL(path) {
   await packsReady;
   const e = packIndex && packIndex.files[path];
-  if (!e) return BASE + path;
-  if (e.url) return BASE + e.url;
+  // absolute, so the URL also works inside CSS custom properties (resolved against the stylesheet otherwise)
+  if (!e) return new URL(BASE + path, location.href).href;
+  if (e.url) return new URL(BASE + e.url, location.href).href;
   let u = urlCache.get(path);
   if (!u) { u = packedBlob(path).then((b) => URL.createObjectURL(b)); urlCache.set(path, u); }
   return u;

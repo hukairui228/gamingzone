@@ -200,7 +200,9 @@ export class Player {
     if (ml > 1) { mx /= ml; mz /= ml; }
     const moving = ml > 0.1 && this.action <= 0;
     const sprint = ctl.sprint && !aiming;
-    const speed = moving ? (aiming ? 2.2 : sprint ? 7.2 : ml > 0.6 ? 4.4 : 1.8) * Math.min(1, ml) : 0;
+    // continuous speed from stick tilt: light tilt walks, full tilt runs (no sudden jump between gaits)
+    const tilt = Math.min(1, ml);
+    const speed = !moving ? 0 : aiming ? 2.2 * tilt : sprint ? 7.2 : 1.3 + 3.3 * THREE.MathUtils.smoothstep(tilt, 0.3, 0.9);
     if (moving) {
       this.pos.x += mx * speed * dt; this.pos.z += mz * speed * dt;
       if (!aiming) {
@@ -253,7 +255,9 @@ export class Player {
         const back = mx * fx + mz * fz < -0.3;
         clip = (back ? 'sl__player__backwalk' : 'sl__player__walk') + armed;
       } else clip = speed > 6 ? 'fl__player__sprint' + armed : speed > 3 ? 'sl__player__run' + armed : 'sl__player__walk' + armed;
-      if (clip) this.c.play(clip, { timeScale: speed > 6 ? 1.1 : 1 });
+      // keep the feet planted: playback speed follows ground speed within each gait
+      const ts = speed > 6 ? 1.1 : speed > 3 ? speed / 4.4 : moving ? Math.max(0.6, speed / 1.7) : 1;
+      if (clip) { const act = this.c.play(clip); if (act) act.timeScale = ts; }
     }
     if (aiming && this.reloading <= 0) this.c.overlay(`wo__player__${w.aim}9pts_${cam.pitch > 0.25 ? 'down' : cam.pitch < -0.25 ? 'up' : 'front'}`);
     else if (this.reloading <= 0) this.c.overlay(null);

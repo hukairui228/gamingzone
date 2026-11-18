@@ -388,7 +388,7 @@ export class MissionCtx {
   check(fn) { this.checks.push(fn); }
 
   protect(entity, msg) {
-    this.check(() => ((entity.dead || entity.health <= 0) ? this.T(msg) : null));
+    this.check(() => ((entity.dead || entity.health <= 0) ? (this.T(msg) || this.g.t('global', 87) || '任务失败') : null));
   }
 
   timer(sec) { this.timerLeft = sec; }

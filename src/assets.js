@@ -11,7 +11,10 @@ export function setAnisotropy(n) { maxAniso = n; }
 
 /** 'high'/'ultra' use the AI-upscaled HD texture pack when it was generated (tools/upscale_textures.py). */
 function wantHD() {
-  try { return ['high', 'ultra'].includes(localStorage.getItem('gm_quality2') || 'high'); } catch { return true; }
+  // phones: 2048² HD textures decode to well over a gigabyte of GPU memory, more than mobile Safari allows a page,
+  // so they load only at 'ultra' there
+  const phone = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  try { return (phone ? ['ultra'] : ['high', 'ultra']).includes(localStorage.getItem('gm_quality2') || 'high'); } catch { return !phone; }
 }
 
 // Packed deployment (tools/pack_web.py): assets live inside a few large pack files listed in packs.json.
@@ -22,12 +25,16 @@ const urlCache = new Map();
 export const packsReady = fetch(BASE + 'packs.json').then((r) => (r.ok ? r.json() : null)).catch(() => null)
   .then((j) => { packIndex = j; });
 
+const packTimers = new Map();
 function packBlob(name) {
   let p = packBlobs.get(name);
   if (!p) {
     p = fetch(BASE + name).then((r) => { if (!r.ok) throw new Error('缺少素材包 ' + name); return r.blob(); });
     packBlobs.set(name, p);
   }
+  // drop our reference after a quiet spell so the browser can free it (it is re-fetched from cache if needed)
+  clearTimeout(packTimers.get(name));
+  packTimers.set(name, setTimeout(() => { packBlobs.delete(name); packTimers.delete(name); }, 20000));
   return p;
 }
 
@@ -78,7 +85,11 @@ export function texture(name, { srgb = true, repeat = true } = {}) {
   let t = texCache.get(key);
   if (!t) {
     const tex = t = new THREE.Texture();
-    assetURL((hd ? 'tex_hd/' : 'tex/') + name).then((u) => imgLoader.load(u, (img) => { tex.image = img; tex.needsUpdate = true; }));
+    const path = (hd ? 'tex_hd/' : 'tex/') + name;
+    assetURL(path).then((u) => imgLoader.load(u, (img) => {
+      tex.image = img; tex.needsUpdate = true;
+      if (u.startsWith('blob:')) { URL.revokeObjectURL(u); urlCache.delete(path); }
+    }));
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.anisotropy = maxAniso;
     t.flipY = false;

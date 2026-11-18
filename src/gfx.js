@@ -101,6 +101,17 @@ export class Gfx {
     this.envTimer = 0;
     // phones default to high too: modern phone GPUs handle it, and dynamic resolution keeps the frame rate up
     this.touch = matchMedia('(pointer: coarse)').matches;
+    // out of GPU memory: step quality down once and reload instead of failing repeatedly
+    r.domElement.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      const order = ['low', 'medium', 'high', 'ultra'];
+      const i = Math.max(0, order.indexOf(this.quality) - 1);
+      try { localStorage.setItem('gm_quality2', order[i]); } catch { /* ignore */ }
+      const m = document.querySelector('#loading .msg');
+      document.getElementById('loading')?.classList.remove('hidden');
+      if (m) m.textContent = '显存不足，正在以较低画质重新载入…';
+      setTimeout(() => location.reload(), 800);
+    });
     this.dyn = 1; this.frameT = 0; this.frames = 0; this.dynT = 0;
     this.setQuality(localStorage.getItem('gm_quality2') || 'high');
     addEventListener('resize', () => this.resize());

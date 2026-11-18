@@ -1,5 +1,84 @@
 // Original game audio: sfx, voice barks, engine rpm bands, 5 radio stations with jingles and ads.
-import { fetchAsset, assetURL } from './assets.js';
+import { fetchAsset, assetURL, MODE, localBytes } from './assets.js';
+
+// ---- original IMA-ADPCM .wav files (standalone app imports them as-is) ----
+const IMA_STEP = [7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107,
+  118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166,
+  1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630,
+  9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767];
+const IMA_INDEX = [-1, -1, -1, -1, 2, 4, 6, 8];
+
+/** decode a RIFF WAVE (IMA ADPCM 0x11 or PCM16) -> { rate, channels: Float32Array[] } */
+export function decodeWav(bytes) {
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let o = 12, fmt = null, data = null;
+  while (o + 8 <= v.byteLength) {
+    const id = String.fromCharCode(bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]);
+    const len = v.getUint32(o + 4, true);
+    if (id === 'fmt ') fmt = { tag: v.getUint16(o + 8, true), ch: v.getUint16(o + 10, true), rate: v.getUint32(o + 12, true),
+      align: v.getUint16(o + 20, true), bits: v.getUint16(o + 22, true), spb: len >= 22 ? v.getUint16(o + 26, true) : 0 };
+    if (id === 'data') data = [o + 8, Math.min(len, v.byteLength - o - 8)];
+    o += 8 + len + (len & 1);
+  }
+  if (!fmt || !data) throw new Error('bad wav');
+  const [start, size] = data, nch = fmt.ch;
+  if (fmt.tag === 1) {
+    const n = Math.floor(size / 2 / nch);
+    const out = Array.from({ length: nch }, () => new Float32Array(n));
+    for (let i = 0; i < n; i++) for (let c = 0; c < nch; c++) out[c][i] = v.getInt16(start + (i * nch + c) * 2, true) / 32768;
+    return { rate: fmt.rate, channels: out };
+  }
+  if (fmt.tag !== 0x11) throw new Error('unsupported wav format ' + fmt.tag);
+  const align = fmt.align, spb = fmt.spb || ((align - 4 * nch) * 8) / (4 * nch) + 1;
+  const blocks = Math.ceil(size / align);
+  const out = Array.from({ length: nch }, () => new Float32Array(blocks * spb));
+  for (let b = 0; b < blocks; b++) {
+    const bo = start + b * align, bend = Math.min(start + size, bo + align);
+    const pred = [], idx = [];
+    for (let c = 0; c < nch; c++) {
+      pred[c] = v.getInt16(bo + c * 4, true); idx[c] = Math.min(88, bytes[bo + c * 4 + 2]);
+      out[c][b * spb] = pred[c] / 32768;
+    }
+    let p = bo + 4 * nch, k = 1;
+    while (p + 4 * nch <= bend && k < spb) {
+      for (let c = 0; c < nch; c++) {
+        for (let j = 0; j < 8; j++) {
+          const byte = bytes[p + c * 4 + (j >> 1)];
+          const nib = j & 1 ? byte >> 4 : byte & 15;
+          const step = IMA_STEP[idx[c]];
+          let diff = step >> 3;
+          if (nib & 4) diff += step; if (nib & 2) diff += step >> 1; if (nib & 1) diff += step >> 2;
+          pred[c] = Math.max(-32768, Math.min(32767, pred[c] + (nib & 8 ? -diff : diff)));
+          idx[c] = Math.max(0, Math.min(88, idx[c] + IMA_INDEX[nib & 7]));
+          if (k + j < spb) out[c][b * spb + k + j] = pred[c] / 32768;
+        }
+      }
+      p += 4 * nch; k += 8;
+    }
+  }
+  return { rate: fmt.rate, channels: out };
+}
+
+/** PCM16 WAV blob for the streaming <audio> element (radio / menu music) */
+function wavBlob({ rate, channels }) {
+  const nch = channels.length, n = channels[0].length;
+  const buf = new ArrayBuffer(44 + n * nch * 2), v = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * nch * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, nch, true); v.setUint32(24, rate, true);
+  v.setUint32(28, rate * nch * 2, true); v.setUint16(32, nch * 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, n * nch * 2, true);
+  const pcm = new Int16Array(buf, 44);
+  for (let i = 0; i < n; i++) for (let c = 0; c < nch; c++) pcm[i * nch + c] = Math.max(-32768, Math.min(32767, channels[c][i] * 32767));
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+/** URL for a streamed track; local mode decodes the original ADPCM into a temporary PCM blob */
+async function trackURL(name) {
+  if (MODE !== 'local') return assetURL(A(name));
+  const b = await localBytes('audio/' + name + '.wav');
+  return b ? URL.createObjectURL(wavBlob(decodeWav(b))) : '';
+}
+
 
 const A = (name) => 'audio/' + name + '.m4a';
 
@@ -45,8 +124,16 @@ export class Audio {
   load(name) {
     let p = this.buffers.get(name);
     if (!p) {
-      p = fetchAsset(A(name)).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(name)))
-        .then((b) => this.ctx.decodeAudioData(b)).catch(() => null);
+      p = MODE === 'local'
+        ? localBytes('audio/' + name + '.wav').then((b) => {
+          if (!b) return null;
+          const d = decodeWav(b);
+          const ab = this.ctx.createBuffer(d.channels.length, d.channels[0].length, d.rate);
+          d.channels.forEach((ch, i) => ab.copyToChannel(ch, i));
+          return ab;
+        }).catch(() => null)
+        : fetchAsset(A(name)).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(name)))
+          .then((b) => this.ctx.decodeAudioData(b)).catch(() => null);
       this.buffers.set(name, p);
     }
     return p;
@@ -143,7 +230,11 @@ export class Audio {
   setStation(i) {
     if (!this.ctx) return;
     this.station = i;
-    if (i < 0) { this.radioEl.pause(); return; }
+    if (i < 0) {
+      this.radioEl.pause();
+      if (this.radioURL && this.radioURL.startsWith('blob:')) { URL.revokeObjectURL(this.radioURL); this.radioURL = null; }
+      return;
+    }
     this.play('sfx_car_radio_tune', { vol: 0.5 });
     this.queue = [];
     this.nextTrack(true);
@@ -169,7 +260,11 @@ export class Audio {
     }
     const t = this.queue.shift();
     const el = this.radioEl;
-    assetURL(A(t)).then((u) => { if (this.station < 0) return; el.src = u; el.play().catch(() => {}); });
+    trackURL(t).then((u) => {
+      if (this.station < 0 || !u) return;
+      if (this.radioURL && this.radioURL.startsWith('blob:')) URL.revokeObjectURL(this.radioURL);
+      this.radioURL = u; el.src = u; el.play().catch(() => {});
+    });
     if (first) this.radioEl.addEventListener('loadedmetadata', () => {
       if (/m_radio_.*_\d\d|bump|volcano|jerkit|stompbox|boombapcats|notime|bigbadwolf|policesign/.test(t))
         this.radioEl.currentTime = Math.random() * this.radioEl.duration * 0.6;
@@ -185,10 +280,10 @@ export class Audio {
 
   music(name) {
     if (!this.ctx) return;
-    if (this.bgm) { this.bgm.pause(); }
+    if (this.bgm) { this.bgm.pause(); if (this.bgm.src.startsWith('blob:')) URL.revokeObjectURL(this.bgm.src); }
     if (!name) { this.bgm = null; return; }
     const bgm = this.bgm = new window.Audio();
     bgm.loop = true; bgm.volume = this.volume.music;
-    assetURL(A(name)).then((u) => { if (this.bgm !== bgm) return; bgm.src = u; bgm.play().catch(() => {}); });
+    trackURL(name).then((u) => { if (this.bgm !== bgm || !u) return; bgm.src = u; bgm.play().catch(() => {}); });
   }
 }

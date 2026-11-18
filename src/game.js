@@ -14,7 +14,7 @@ import { Fx } from './fx.js';
 import { Hud } from './hud.js';
 import { Vehicle } from './vehicle.js';
 import { buildModel } from './models.js';
-import { json } from './assets.js';
+import { json, MODE } from './assets.js';
 import { Missions } from './missions.js';
 import { Services } from './services.js';
 import { Achievements } from './achievements.js';
@@ -214,6 +214,7 @@ export class Game {
       <div class="row">视角灵敏度 <input data-k="sensitivity" type="range" min="0.3" max="2.5" step="0.1" value="${S.sensitivity}"></div>
       <div class="row">上车自动开电台 <input data-k="autoRadio" type="checkbox" ${S.autoRadio ? 'checked' : ''}></div>
       <div class="row">时间 <input data-k="hour" type="range" min="0" max="24" step="0.25" value="${this.gfx.hour}"></div>
+      ${MODE === 'local' ? '<button data-a="reimport">重新导入 IPA</button>' : ''}
       <button data-a="back">${this.t('menu', 43) || '返回'}</button></div>`);
     s.oninput = s.onchange = (e) => {
       const k = e.target.dataset.k;
@@ -226,7 +227,10 @@ export class Game {
       if (k === 'music' && this.audio.musicBus) { this.audio.volume.music = +v; this.audio.musicBus.gain.value = +v; }
       localStorage.setItem('gm_settings', JSON.stringify(S));
     };
-    s.onclick = (e) => { if (e.target.dataset.a === 'back') back(); };
+    s.onclick = (e) => {
+      if (e.target.dataset.a === 'back') back();
+      if (e.target.dataset.a === 'reimport' && confirm('删除已导入的游戏数据并重新选择 IPA？')) import('./importer.js').then((m) => m.reimport());
+    };
   }
 
   helpMenu(back) {

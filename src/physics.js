@@ -76,10 +76,11 @@ export class World {
    * Push a vertical cylinder (x,z,radius) at feet height y with given height out of walls.
    * Mutates pos; returns {hit, nx, nz, depth} for the deepest contact.
    */
-  collide(pos, radius, height, out = { hit: false, nx: 0, nz: 0, depth: 0 }) {
+  collide(pos, radius, height, out = { hit: false, nx: 0, nz: 0, depth: 0 }, base = 0.45) {
     out.hit = false; out.depth = 0;
     const w = this.w;
-    const y0 = pos.y + 0.45, y1 = pos.y + height;
+    // only geometry reaching above `base` blocks: lower kerbs, steps and planters are stepped/driven over
+    const y0 = pos.y + base, y1 = pos.y + height;
     const gx0 = Math.floor((pos.x - radius) / WCELL), gx1 = Math.floor((pos.x + radius) / WCELL);
     const gz0 = Math.floor((pos.z - radius) / WCELL), gz1 = Math.floor((pos.z + radius) / WCELL);
     const seen = this._seen || (this._seen = new Set());

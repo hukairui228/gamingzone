@@ -6,7 +6,7 @@ import json, os, sys
 import numpy as np
 from PIL import Image
 
-MAP_X0, MAP_Z0, MAP_SCALE = -1046.8, -1124.8, 1.95
+MAP_X0, MAP_Z0, MAP_SCALE = -1049.3, -1126.3, 1.955  # fitted against the city's wall geometry
 
 
 def thin(img):

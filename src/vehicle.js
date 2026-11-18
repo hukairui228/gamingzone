@@ -143,10 +143,17 @@ export class Vehicle {
     else if (this.onGround) this.vf -= this.vf * (thr === 0 ? 0.35 : 0.05) * dt + Math.sign(this.vf) * Math.min(Math.abs(this.vf), (thr === 0 ? 1.6 : 0) * dt);
 
     // steering: bicycle model, reduced at speed
-    const target = ctl.steer * (0.62 - Math.min(0.42, Math.abs(this.vf) / max * 0.45));
-    this.steer += (target - this.steer) * Math.min(1, dt * 8);
+    const target = ctl.steer * 0.6;
+    // wheels turn quickly at low speed, more calmly at speed (no twitchy flicks from a touch stick)
+    this.steer += (target - this.steer) * Math.min(1, dt * (target === 0 ? 10 : 7 - Math.min(4, this.speed / 8)));
     if (this.onGround || boat) {
-      const yawRate = boat ? (this.vf / 6) * this.steer * 1.4 : this.vf / this.wheelBase * Math.tan(this.steer);
+      let yawRate = boat ? (this.vf / 6) * this.steer * 1.4 : this.vf / this.wheelBase * Math.tan(this.steer);
+      if (!boat) {
+        // tyre grip caps how fast the car can rotate: lateral acceleration v * yawRate <= latG
+        const latG = (this.type === 'bike' ? 10 : 11) * (ctl.handbrake ? 1.8 : 1);
+        const cap = latG / Math.max(2, this.speed);
+        yawRate = Math.max(-cap, Math.min(cap, yawRate));
+      }
       this.yaw -= yawRate * dt;
       const grip = ctl.handbrake && !boat ? 1.2 : d.grip;
       this.vs += yawRate * this.vf * (boat ? 0.25 : 0.08) * dt * (ctl.handbrake ? 3 : 1);
@@ -169,13 +176,16 @@ export class Vehicle {
     for (const k of [-1, 0, 1]) {
       _p.set(this.pos.x + _fw.x * (half * k + this.offsetZ), this.pos.y, this.pos.z + _fw.z * (half * k + this.offsetZ));
       const px = _p.x, pz = _p.z;
-      world.collide(_p, r, 1.4, _col);
+      world.collide(_p, r, 1.5, _col, 0.75);
       if (_col.hit) {
         this.pos.x += _p.x - px; this.pos.z += _p.z - pz;
+        this.lastHit = [_col.nx, _col.nz];
         const vx = _fw.x * this.vf + _rt.x * this.vs, vz = _fw.z * this.vf + _rt.z * this.vs;
         const vn = vx * _col.nx + vz * _col.nz;
         if (vn < 0) {
-          const nvx = vx - vn * _col.nx * 1.35, nvz = vz - vn * _col.nz * 1.35;
+          // glancing hits slide along the wall; only hard head-on hits bounce back
+          const bounce = vn < -10 ? 1.25 : 1.0, keep = vn < -10 ? 0.75 : 0.97;
+          const nvx = (vx - vn * _col.nx * bounce) * keep, nvz = (vz - vn * _col.nz * bounce) * keep;
           this.vf = nvx * _fw.x + nvz * _fw.z;
           this.vs = nvx * _rt.x + nvz * _rt.z;
           this.impact = Math.max(this.impact, -vn);
@@ -183,6 +193,11 @@ export class Vehicle {
       }
     }
     if (this.impact > 4) this.health -= (this.impact - 4) * 9;
+    // wedged against something while trying to drive: ease out along the last contact normal
+    if (Math.abs(thr) > 0.4 && this.speed < 0.8 && this.lastHit) {
+      this.stuckT = (this.stuckT || 0) + dt;
+      if (this.stuckT > 0.9) { this.pos.x += this.lastHit[0] * 0.5; this.pos.z += this.lastHit[1] * 0.5; this.stuckT = 0.5; }
+    } else { this.stuckT = 0; if (this.speed > 3) this.lastHit = null; }
 
     // suspension: sample ground under the wheels
     const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
@@ -190,7 +205,7 @@ export class Vehicle {
     for (let i = 0; i < 4; i++) {
       const w = this.wheelPos[i];
       const wx = this.pos.x + w.x * cy + w.z * sy, wz = this.pos.z - w.x * sy + w.z * cy;
-      let h = world.height(wx, wz, this.pos.y + 0.6, 1.0);
+      let h = world.height(wx, wz, this.pos.y + 0.3, 0.35);
       if (h === -Infinity) h = -3;
       gh.push(h);
     }

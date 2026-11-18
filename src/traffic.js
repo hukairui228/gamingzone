@@ -100,7 +100,21 @@ export class Traffic {
       const side = Math.abs(dx * fz - dz * fx);
       if (side < 2.2 + r) block = Math.min(block, fwd);
     };
-    for (const o of g.vehicles()) if (o !== v) scan(o.pos.x, o.pos.z, 0.6);
+    for (const o of g.vehicles()) {
+      if (o === v) continue;
+      scan(o.pos.x, o.pos.z, 0.6);
+      // crossing traffic at junctions: yield to a car close by in our front half; when both have the other in
+      // front (meeting at right angles) one fixed car of the pair gives way, so they never drive into each other
+      const dx = o.pos.x - v.pos.x, dz = o.pos.z - v.pos.z, d = Math.hypot(dx, dz);
+      if (d > 11 || d < 0.1) continue;
+      const mine = (dx * fx + dz * fz) / d;
+      if (mine < 0.25) continue;
+      // parallel or oncoming cars in other lanes are the straight scan's business
+      if (Math.abs(fx * Math.sin(o.yaw) + fz * Math.cos(o.yaw)) > 0.8) continue;
+      const theirs = -(dx * Math.sin(o.yaw) + dz * Math.cos(o.yaw)) / d;
+      if (theirs > 0.25 && o.ai && o.ai.mode === 'lane' && v.root.id < o.root.id) continue;
+      block = Math.min(block, d * mine);
+    }
     if (!g.player.vehicle) scan(g.player.pos.x, g.player.pos.z, 0.3);
     for (const p of g.peds.list) if (!p.dead) scan(p.pos.x, p.pos.z, 0.2);
     let target = ai.cruise;
@@ -128,11 +142,11 @@ export class Traffic {
     let dy = yaw - v.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     v.yaw += dy * Math.min(1, dt * 5);
     v.vf = ai.speed; v.vs = 0;
-    v.steer = THREE.MathUtils.clamp(-dy * 3, -0.5, 0.5);
+    // wheel angle from the turn rate actually driven (bicycle model), not from the raw heading error
+    const yawRate = dy * Math.min(1, dt * 5) / Math.max(dt, 1e-3);
+    v.steer = THREE.MathUtils.clamp(-Math.atan2(yawRate * v.wheelBase, Math.max(3, v.vf)), -0.5, 0.5);
     v.root.rotation.set(0, v.yaw, 0);
-    v.spin += v.vf * dt / v.wheelR;
-    v.pivots.forEach((p) => { p.rotation.x = -v.spin; });
-    if (v.wheels.length === 4) { v.wheels[0].rotation.z = -v.steer; v.wheels[1].rotation.z = -v.steer; }
+    v.animateWheels(dt);
   }
 
   reattach(v) {
@@ -171,6 +185,7 @@ export class Traffic {
       const bx = vbx + nx * j * ma / (ma + mb), bz = vbz + nz * j * ma / (ma + mb);
       a.vf = ax * Math.sin(a.yaw) + az * Math.cos(a.yaw);
       b.vf = bx * Math.sin(b.yaw) + bz * Math.cos(b.yaw);
+      a.vs = ax * Math.cos(a.yaw) - az * Math.sin(a.yaw);
       b.vs = bx * Math.cos(b.yaw) - bz * Math.sin(b.yaw);
       if (onHit) onHit(a, b, rel);
     }

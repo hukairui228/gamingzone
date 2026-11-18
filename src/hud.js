@@ -40,7 +40,7 @@ export class Hud {
       <div id="overlay"></div>
       <div id="damage"></div>
       <div id="crosshair"></div>
-      <div id="mapview" class="hidden"><div class="mapwrap"><img data-asset="tex/minimap_map.webp"><canvas width="1024" height="1024"></canvas></div><div class="legend"></div></div>
+      <div id="mapview" class="hidden"><button class="mapclose" type="button" aria-label="关闭地图">✕</button><div class="mapwrap"><img data-asset="tex/minimap_map.webp"><canvas width="1024" height="1024"></canvas></div><div class="legend"></div></div>
       <div id="screen" class="hidden"></div>
       <div id="loading"><img data-asset="tex/title.webp"><div class="bar"><i></i></div><div class="msg">正在载入…</div></div>`;
     this.ui = ui;
@@ -66,6 +66,11 @@ export class Hud {
     this.lastMoney = null;
     this.popups = [];
     this.bannerT = 0; this.msgT = 0;
+    // close: the ✕ button, or a tap on the dark area around the map (touch screens have no M / Esc key)
+    this.el('#mapview').addEventListener('click', (e) => {
+      if (e.target.closest('.mapwrap')) return;
+      this.g.mapOpen = false; this.toggleMap(false);
+    });
     this.el('#mapview canvas').addEventListener('click', (e) => {
       const r = e.target.getBoundingClientRect();
       const M = this.g.roads.map;
@@ -284,7 +289,7 @@ export class Hud {
   toggleMap(on) {
     const m = this.el('#mapview');
     m.classList.toggle('hidden', !on);
-    m.querySelector('.legend').textContent = `${this.g.t('menu', 91)} · M / Tab · 点击地图设置导航点`;
+    m.querySelector('.legend').textContent = `${this.g.t('menu', 91)} · 点击地图设置导航点 · 点 ✕ 或空白处关闭`;
     if (on) this.drawBigMap();
   }
 

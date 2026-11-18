@@ -582,10 +582,13 @@ export class Game {
     for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) {
       const a = cars[i], b = cars[j];
       if (Math.abs(a.pos.x - b.pos.x) > 8 || Math.abs(a.pos.z - b.pos.z) > 8) continue;
+      // two traffic cars following their lanes never crash into each other: they queue and yield (traffic.js);
+      // overlap from spawning is ignored rather than turned into a pile-up
+      if (a.ai && a.ai.mode === 'lane' && b.ai && b.ai.mode === 'lane') continue;
       Traffic.collide(a, b, (x, y, rel) => {
         for (const c of [x, y]) {
-          c.health -= rel * 12;
-          if (c.ai && c.ai.mode === 'lane') { c.ai.mode = 'physics'; c.ai.calm = 0; }
+          c.health -= Math.max(0, rel - 3) * 12;
+          if (c.ai && c.ai.mode === 'lane' && rel > 2) { c.ai.mode = 'physics'; c.ai.calm = 0; }
           if (!this.parked.has(c) && !c.ai && c !== pl.vehicle) this.parked.add(c);
         }
         if (rel > 3) this.audio.play(rel > 10 ? 'sfx_car_impact_hard' : 'sfx_car_impact_medium', { vol: this.audioVol(x.pos, Math.min(1, rel / 12)) });

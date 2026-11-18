@@ -244,16 +244,28 @@ export class Vehicle {
     this.suspension(dt);
     this.pose(this.roll + this.br, this.bp);
 
-    // wheels roll forward (+x in the original Z-up wheel frame); the per-frame step is capped below the rim's
-    // symmetry angle so fast spin never strobes into wheels that look frozen or turning backwards
-    const step = this.vf * dt / this.wheelR;
-    this.spin += Math.sign(step) * Math.min(Math.abs(step), 0.42);
-    this.pivots.forEach((p) => { p.rotation.x = this.spin; });
-    const front = this.wheels.filter((w) => /front/.test(w.name));
-    for (const w of front) w.rotation.z = -this.steer;
+    this.animateWheels(dt);
     this.rpm = THREE.MathUtils.clamp(Math.abs(this.vf) / max, 0, 1);
     // only open water swallows cars; anywhere with land under it the game lifts the car back up instead
     if (this.pos.y < -2.5 && this.health > 0 && world.floor(this.pos.x, this.pos.z) === -Infinity && world.isWater(this.pos.x, this.pos.z)) { this.health = 0; this.sunk = true; }
+  }
+
+  /**
+   * Wheel visuals, shared by player, traffic and police cars.
+   * Roll: forward is +x in the original Z-up wheel frame; the per-frame step is capped below the rim's symmetry
+   * angle so fast spin never strobes into wheels that look frozen or turning backwards.
+   * Steer: a smoothed, speed-reduced angle (real cars barely turn the wheels at speed), so a twitchy touch stick
+   * or a jittery AI heading never makes the front wheels flick left and right.
+   */
+  animateWheels(dt) {
+    const step = this.vf * dt / (this.wheelR || 0.33);
+    this.spin = (this.spin + Math.sign(step) * Math.min(Math.abs(step), 0.42)) % (Math.PI * 2);
+    for (const p of this.pivots) p.rotation.x = this.spin;
+    const max = 0.5 - 0.28 * Math.min(1, this.speed / 22);
+    const target = THREE.MathUtils.clamp(this.steer, -max, max);
+    this.wheelSteer = (this.wheelSteer || 0) + (target - (this.wheelSteer || 0)) * Math.min(1, dt * 9);
+    if (!this.front) this.front = this.wheels.filter((w) => /front/.test(w.name));
+    for (const w of this.front) w.rotation.z = -this.wheelSteer;
   }
 
   /** Damped springs for body pitch (squat/dive), roll (outward lean in corners) and heave (bumps, landings). */

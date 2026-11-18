@@ -4,10 +4,10 @@ import { useLocalAssets } from './assets.js';
 
 const CSS = `
 #importer { position: fixed; inset: 0; z-index: 50; background: radial-gradient(ellipse at 50% 30%, #2b1530, #07060a 70%); color: #f4ede6;
-  display: flex; align-items: center; justify-content: center; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  display: flex; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   overflow-y: auto; }
-#importer .card { width: min(560px, 100%); display: flex; flex-direction: column; gap: 14px; }
+#importer .card { margin: auto; width: min(560px, 100%); display: flex; flex-direction: column; gap: 14px; }
 #importer h1 { margin: 0; font: 900 clamp(34px, 7vw, 58px) / 1 "Arial Black", Impact, sans-serif; letter-spacing: 4px; transform: skewX(-8deg);
   color: #fff; text-shadow: 4px 4px 0 #ff2f87, 8px 8px 0 #000; }
 #importer h2 { margin: -4px 0 6px; font-size: 18px; font-weight: 600; letter-spacing: 6px; color: #ffcf3a; }
@@ -22,6 +22,11 @@ const CSS = `
 #importer .msg { font-size: 14px; color: #cbbfb5; min-height: 1.4em; }
 #importer .err { font-size: 14px; color: #ff8a8a; white-space: pre-wrap; }
 #importer .note { font-size: 12px; color: #9a8f86; line-height: 1.6; }
+@media (max-height: 500px) {
+  #importer .card { gap: 8px; width: min(680px, 100%); }
+  #importer h1 { font-size: 32px; } #importer h2 { font-size: 14px; margin: 0; }
+  #importer ol { font-size: 13px; line-height: 1.5; } #importer .pick { padding: 11px; font-size: 17px; }
+}
 #importer [hidden] { display: none !important; }
 `;
 

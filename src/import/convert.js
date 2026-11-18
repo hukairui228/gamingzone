@@ -555,7 +555,7 @@ function composeSprite(sprite, img, W = 960, H = 640) {
 }
 
 // ======================= roads (tools/build_roads.py) =======================
-const MAP_X0 = -1046.8, MAP_Z0 = -1124.8, MAP_SCALE = 1.95;
+const MAP_X0 = -1049.3, MAP_Z0 = -1126.3, MAP_SCALE = 1.955; // tools/build_roads.py fit
 const npRound1 = (x) => rint(x * 10) / 10; // numpy float64 round(x, 1)
 
 function thin(img, W, H) {

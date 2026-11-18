@@ -113,59 +113,65 @@ export function decodePVRTC(data, w, h, is2bpp) {
   const { ca, cb, wt, punch } = texelInfo(data, nBlocks, is2bpp);
   const out = new Uint8Array(w * h * 4);
   const npx = bw * 4;
-  const cA = new Int32Array(npx * 4), cB = new Int32Array(npx * 4), buf = new Uint8Array(npx * 4);
-  const local = new Int32Array(9);
+  const cA = new Int32Array(npx * 4), cB = new Int32Array(npx * 4);
+  const local = new Int32Array(9), loc8 = new Int32Array(9);
+  const cc = new Int32Array(nBlocks * 8);
+  for (let i = 0; i < nBlocks; i++) for (let k = 0; k < 4; k++) { cc[i * 8 + k] = ca[i * 4 + k]; cc[i * 8 + 4 + k] = cb[i * 4 + k]; }
   const IWX = is2bpp ? IWX2 : IW4;
   const sx = is2bpp ? 2 : 1, sa = is2bpp ? 1 : 0; // colour shift (>>1 / >>2), alpha shift (>>0 / >>1)
+  // per pixel: the neighbour blocks with a non-zero interpolation weight
+  const tabN = [], tabW = [];
+  for (let y = 0; y < 4; y++) for (let x = 0; x < bw; x++) {
+    const n = [], wv = [];
+    for (let acy = 0, ac = 0; acy < 3; acy++) for (let acx = 0; acx < 3; acx++, ac++) {
+      const iw = IWX[x][acx] * IW4[y][acy];
+      if (iw) { n.push(ac); wv.push(iw); }
+    }
+    tabN.push(Int32Array.from(n)); tabW.push(Int32Array.from(wv));
+  }
   for (let by = 0; by < nby; by++) {
     const py0 = by === 0 ? nby - 1 : by - 1, py2 = by === nby - 1 ? 0 : by + 1;
     for (let bx = 0; bx < nbx; bx++) {
       const px0 = bx === 0 ? nbx - 1 : bx - 1, px2 = bx === nbx - 1 ? 0 : bx + 1;
-      const PX = [px0, bx, px2], PY = [py0, by, py2];
-      for (let cy = 0, c = 0; cy < 3; cy++) for (let cx = 0; cx < 3; cx++, c++) local[c] = morton(PX[cx], PY[cy], minDim);
-      cA.fill(0); cB.fill(0);
-      for (let y = 0, i = 0; y < 4; y++) {
-        for (let x = 0; x < bw; x++, i++) {
-          const j = i * 4;
-          for (let acy = 0, ac = 0; acy < 3; acy++) {
-            for (let acx = 0; acx < 3; acx++, ac++) {
-              const iw = IWX[x][acx] * IW4[y][acy];
-              if (!iw) continue;
-              const t = local[ac] * 4;
-              cA[j] += ca[t] * iw; cA[j + 1] += ca[t + 1] * iw; cA[j + 2] += ca[t + 2] * iw; cA[j + 3] += ca[t + 3] * iw;
-              cB[j] += cb[t] * iw; cB[j + 1] += cb[t + 1] * iw; cB[j + 2] += cb[t + 2] * iw; cB[j + 3] += cb[t + 3] * iw;
-            }
-          }
-          for (let k = 0; k < 3; k++) {
-            cA[j + k] = (cA[j + k] >> sx) + (cA[j + k] >> (sx + 5));
-            cB[j + k] = (cB[j + k] >> sx) + (cB[j + k] >> (sx + 5));
-          }
-          cA[j + 3] = (cA[j + 3] >> sa) + (cA[j + 3] >> (sa + 4));
-          cB[j + 3] = (cB[j + 3] >> sa) + (cB[j + 3] >> (sa + 4));
+      local[0] = morton(px0, py0, minDim); local[1] = morton(bx, py0, minDim); local[2] = morton(px2, py0, minDim);
+      local[3] = morton(px0, by, minDim); local[4] = morton(bx, by, minDim); local[5] = morton(px2, by, minDim);
+      local[6] = morton(px0, py2, minDim); local[7] = morton(bx, py2, minDim); local[8] = morton(px2, py2, minDim);
+      for (let k = 0; k < 9; k++) loc8[k] = local[k] * 8;
+      for (let i = 0; i < npx; i++) {
+        const j = i * 4, tn = tabN[i], tw = tabW[i], nk = tn.length;
+        let ar = 0, ag = 0, ab = 0, aa = 0, br = 0, bg = 0, bb = 0, ba = 0;
+        for (let k = 0; k < nk; k++) {
+          const t = loc8[tn[k]], iw = tw[k];
+          ar += cc[t] * iw; ag += cc[t + 1] * iw; ab += cc[t + 2] * iw; aa += cc[t + 3] * iw;
+          br += cc[t + 4] * iw; bg += cc[t + 5] * iw; bb += cc[t + 6] * iw; ba += cc[t + 7] * iw;
         }
+        cA[j] = (ar >> sx) + (ar >> (sx + 5)); cA[j + 1] = (ag >> sx) + (ag >> (sx + 5)); cA[j + 2] = (ab >> sx) + (ab >> (sx + 5));
+        cA[j + 3] = (aa >> sa) + (aa >> (sa + 4));
+        cB[j] = (br >> sx) + (br >> (sx + 5)); cB[j + 1] = (bg >> sx) + (bg >> (sx + 5)); cB[j + 2] = (bb >> sx) + (bb >> (sx + 5));
+        cB[j + 3] = (ba >> sa) + (ba >> (sa + 4));
       }
       const self = local[4], SW = self * 32;
       let pf = punch[self];
+      const x0 = bw * bx;
       for (let y = 0, i = 0; y < 4; y++) {
+        const yy = by * 4 + y, row = yy * w;
         for (let x = 0; x < bw; x++, i++, pf >>>= 1) {
           if (is2bpp) {
             const v = wt[SW + i];
             if (v < 0) {
               const ya = wt[local[POSYA[y][0]] * 32 + i + POSYA[y][1]], yb = wt[local[POSYB[y][0]] * 32 + i + POSYB[y][1]];
               const xl = wt[local[POSXL[x][0]] * 32 + i + POSXL[x][1]], xr = wt[local[POSXR[x][0]] * 32 + i + POSXR[x][1]];
-              wt[SW + i] = v === -1 ? Math.trunc((ya + yb + 1) / 2) : v === -2 ? Math.trunc((xl + xr + 1) / 2) : Math.trunc((ya + yb + xl + xr + 2) / 4);
+              wt[SW + i] = v === -1 ? ((ya + yb + 1) / 2) | 0 : v === -2 ? ((xl + xr + 1) / 2) | 0 : ((ya + yb + xl + xr + 2) / 4) | 0;
             }
           }
-          const w8 = wt[SW + i], j = i * 4;
-          buf[j] = Math.trunc((cA[j] * (8 - w8) + cB[j] * w8) / 8);
-          buf[j + 1] = Math.trunc((cA[j + 1] * (8 - w8) + cB[j + 1] * w8) / 8);
-          buf[j + 2] = Math.trunc((cA[j + 2] * (8 - w8) + cB[j + 2] * w8) / 8);
-          buf[j + 3] = pf & 1 ? 0 : Math.trunc((cA[j + 3] * (8 - w8) + cB[j + 3] * w8) / 8);
+          if (yy >= h || x0 + x >= w) continue; // copy_block_buffer clips to the image
+          const w8 = wt[SW + i], j = i * 4, o = (row + x0 + x) * 4;
+          out[o] = ((cA[j] * (8 - w8) + cB[j] * w8) / 8) | 0;
+          out[o + 1] = ((cA[j + 1] * (8 - w8) + cB[j + 1] * w8) / 8) | 0;
+          out[o + 2] = ((cA[j + 2] * (8 - w8) + cB[j + 2] * w8) / 8) | 0;
+          out[o + 3] = pf & 1 ? 0 : ((cA[j + 3] * (8 - w8) + cB[j + 3] * w8) / 8) | 0;
         }
       }
-      // copy_block_buffer
-      const x0 = bw * bx, xl = Math.min(bw, w - x0) * 4;
-      for (let r = 0, y = by * 4; r < 4 && y < h; r++, y++) out.set(buf.subarray(r * bw * 4, r * bw * 4 + xl), (y * w + x0) * 4);
     }
   }
   return out;

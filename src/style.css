@@ -1,6 +1,7 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #fff; user-select: none; -webkit-user-select: none;
   font-family: GLFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
-#c { display: block; width: 100vw; height: 100vh; touch-action: none; }
+html, body { width: 100%; height: 100%; height: 100dvh; overscroll-behavior: none; }
+#c { display: block; width: 100%; height: 100%; touch-action: none; }
 #ui { position: fixed; inset: 0; pointer-events: none; }
 .hidden { display: none !important; }
 b { color: #ffd23c; font-weight: normal; }

@@ -9,6 +9,14 @@ function bootError(e) {
 (async () => {
   // packs (claude deploy) / http (dev server) / local (imported IPA in IndexedDB) / none → import screen
   const mode = await modeReady;
+  const fs = await import('./fullscreen.js');
+  fs.armAutoFullscreen();
+  if (mode === 'none' || mode === 'local') {
+    const loading = document.getElementById('loading');
+    if (loading) loading.style.visibility = 'hidden';
+    await fs.iosInstallGuide(mode === 'local');
+    if (loading) loading.style.visibility = '';
+  }
   if (mode === 'none') {
     const loading = document.getElementById('loading');
     if (loading) loading.style.visibility = 'hidden';

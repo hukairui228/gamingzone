@@ -50,7 +50,7 @@ export function runImport() {
         <div class="bar" id="imp-bar" hidden><i></i></div>
         <div class="msg" id="imp-msg" aria-live="polite"></div>
         <div class="err" id="imp-err" hidden></div>
-        <div class="note">游戏素材只保存在这台设备的浏览器里，不会上传到任何服务器。导入后可以离线游玩；添加到主屏幕可全屏运行。</div>
+        <div class="note">游戏素材只保存在这台设备的浏览器里，不会上传到任何服务器。导入后可以离线游玩。</div>
       </div>`;
     document.body.appendChild(el);
     const $ = (id) => el.querySelector(id);

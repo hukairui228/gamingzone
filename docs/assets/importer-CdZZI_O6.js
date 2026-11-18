@@ -1,4 +1,4 @@
-import{p as f,u as c,c as x}from"./index-n3oipYuX.js";const h=`
+import{p as f,u as c,c as x}from"./index-Db0OeN5H.js";const h=`
 #importer { position: fixed; inset: 0; z-index: 50; background: radial-gradient(ellipse at 50% 30%, #2b1530, #07060a 70%); color: #f4ede6;
   display: flex; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
@@ -36,6 +36,6 @@ import{p as f,u as c,c as x}from"./index-n3oipYuX.js";const h=`
         <div class="bar" id="imp-bar" hidden><i></i></div>
         <div class="msg" id="imp-msg" aria-live="polite"></div>
         <div class="err" id="imp-err" hidden></div>
-        <div class="note">游戏素材只保存在这台设备的浏览器里，不会上传到任何服务器。导入后可以离线游玩；添加到主屏幕可全屏运行。</div>
+        <div class="note">游戏素材只保存在这台设备的浏览器里，不会上传到任何服务器。导入后可以离线游玩。</div>
       </div>`,document.body.appendChild(r);const e=t=>r.querySelector(t),n=e("#imp-file");n.addEventListener("change",async()=>{const t=n.files&&n.files[0];if(!t)return;e("#imp-err").hidden=!0,e("#imp-pick").hidden=!0,e("#imp-bar").hidden=!1,e("#imp-msg").textContent=`正在读取 ${t.name}（${(t.size/1e6).toFixed(0)} MB）…`;let s=null;try{s=await navigator.wakeLock?.request("screen")}catch{}await f();const m=performance.now(),a=new Worker(new URL(""+new URL("importer.worker-BnNy8qKW.js",import.meta.url).href,import.meta.url),{type:"module"}),d=o=>{a.terminate(),s?.release?.().catch?.(()=>{}),e("#imp-err").hidden=!1,e("#imp-err").textContent=`导入失败：${o}
 请确认选择的是 Gangstar: Miami Vindication 的 IPA，再试一次。`,e("#imp-pick").hidden=!1,e("#imp-bar").hidden=!0,n.value=""};a.onerror=o=>d(o.message||"转换线程出错"),a.onmessage=o=>{const i=o.data;i.type==="progress"?(typeof i.p=="number"&&(e("#imp-bar i").style.width=Math.round(Math.max(0,Math.min(1,i.p))*100)+"%"),i.msg&&(e("#imp-msg").textContent=i.msg)):i.type==="error"?(console.error(i.stack||i.message),d(i.message)):i.type==="done"&&(a.terminate(),s?.release?.().catch?.(()=>{}),e("#imp-bar i").style.width="100%",e("#imp-msg").textContent=`导入完成（${Math.round((performance.now()-m)/1e3)} 秒）`,window.__importSeconds=(performance.now()-m)/1e3,c(),setTimeout(()=>{r.remove(),p.remove(),l()},400))},a.postMessage({file:t})})})}async function b(){await x(),location.reload()}export{b as reimport,u as runImport};

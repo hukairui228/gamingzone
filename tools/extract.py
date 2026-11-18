@@ -1,7 +1,7 @@
 """Extract game assets from your own Gangstar: Miami Vindication IPA into public/assets.
 
 Usage: python3 tools/extract.py path/to/gangstar.ipa
-Requires: pip install numpy pillow texture2ddecoder
+Requires: pip install numpy pillow texture2ddecoder fonttools
 """
 import io, os, sys, zipfile
 
@@ -15,7 +15,7 @@ OUT = os.path.join(ROOT, 'public', 'assets')
 def main(ipa):
     z = zipfile.ZipFile(ipa)
     pack = {os.path.basename(n): n for n in z.namelist() if '/_packMac/' in n and not n.endswith('/')}
-    tmp = os.path.join(OUT, '_raw')
+    tmp = os.path.join(ROOT, '.extract_cache')  # raw files from the IPA, kept out of the web root
     os.makedirs(tmp, exist_ok=True)
 
     def raw(name):
@@ -55,8 +55,18 @@ def main(ipa):
         cgbi.decode(z.read(icon)).convert('RGB').save(os.path.join(OUT, 'icon.png'))
     os.makedirs(os.path.join(OUT, 'fonts'), exist_ok=True)
     for f in ('font_chinese.ttf', 'font_latin.ttf'):
-        with open(os.path.join(OUT, 'fonts', f), 'wb') as fh:
+        dst = os.path.join(OUT, 'fonts', f)
+        with open(dst, 'wb') as fh:
             fh.write(z.read(pack[f]))
+        try:  # browsers reject the original fonts' vertical-metrics tables (vhea version 1.1)
+            from fontTools.ttLib import TTFont
+            t = TTFont(dst)
+            for k in ('vhea', 'vmtx', 'VORG'):
+                if k in t:
+                    del t[k]
+            t.save(dst)
+        except ImportError:
+            print('pip install fonttools to use the original fonts in browsers')
     convert_audio([n for n in sorted(pack) if n.endswith('.wav')], raw, os.path.join(OUT, 'audio'))
     import upscale_textures
     upscale_textures.make_specs(OUT)

@@ -1,5 +1,7 @@
 // Original game audio: sfx, voice barks, engine rpm bands, 5 radio stations with jingles and ads.
-const BASE = './assets/audio/';
+import { fetchAsset, assetURL } from './assets.js';
+
+const A = (name) => 'audio/' + name + '.m4a';
 
 export const STATIONS = [
   { name: 'Vice 80s', id: '80s', songs: ['04', '05', '06', '07'] },
@@ -43,7 +45,7 @@ export class Audio {
   load(name) {
     let p = this.buffers.get(name);
     if (!p) {
-      p = fetch(BASE + name + '.m4a').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(name)))
+      p = fetchAsset(A(name)).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(name)))
         .then((b) => this.ctx.decodeAudioData(b)).catch(() => null);
       this.buffers.set(name, p);
     }
@@ -166,8 +168,8 @@ export class Audio {
       }
     }
     const t = this.queue.shift();
-    this.radioEl.src = BASE + t + '.m4a';
-    this.radioEl.play().catch(() => {});
+    const el = this.radioEl;
+    assetURL(A(t)).then((u) => { if (this.station < 0) return; el.src = u; el.play().catch(() => {}); });
     if (first) this.radioEl.addEventListener('loadedmetadata', () => {
       if (/m_radio_.*_\d\d|bump|volcano|jerkit|stompbox|boombapcats|notime|bigbadwolf|policesign/.test(t))
         this.radioEl.currentTime = Math.random() * this.radioEl.duration * 0.6;
@@ -185,8 +187,8 @@ export class Audio {
     if (!this.ctx) return;
     if (this.bgm) { this.bgm.pause(); }
     if (!name) { this.bgm = null; return; }
-    this.bgm = new window.Audio(BASE + name + '.m4a');
-    this.bgm.loop = true; this.bgm.volume = this.volume.music;
-    this.bgm.play().catch(() => {});
+    const bgm = this.bgm = new window.Audio();
+    bgm.loop = true; bgm.volume = this.volume.music;
+    assetURL(A(name)).then((u) => { if (this.bgm !== bgm) return; bgm.src = u; bgm.play().catch(() => {}); });
   }
 }

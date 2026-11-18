@@ -1,8 +1,7 @@
-import { json } from './assets.js';
+import { json, assetURL } from './assets.js';
 
 // HUD rebuilt from the original huds.bsprite: every element is an original atlas module placed at the
 // original screen position, anchored to its screen corner and scaled to the viewport.
-const TEX = './assets/tex/';
 const W0 = 1024, H0 = 768; // the iPad HD layout the sprite positions were authored for
 
 // original weapon icon frames (module, x, y) inside the weapon box
@@ -41,14 +40,26 @@ export class Hud {
       <div id="overlay"></div>
       <div id="damage"></div>
       <div id="crosshair"></div>
-      <div id="mapview" class="hidden"><div class="mapwrap"><img src="${TEX}minimap_map.webp"><canvas width="1024" height="1024"></canvas></div><div class="legend"></div></div>
+      <div id="mapview" class="hidden"><div class="mapwrap"><img data-asset="tex/minimap_map.webp"><canvas width="1024" height="1024"></canvas></div><div class="legend"></div></div>
       <div id="screen" class="hidden"></div>
-      <div id="loading"><img src="${TEX}title.webp"><div class="bar"><i></i></div><div class="msg">正在载入…</div></div>`;
+      <div id="loading"><img data-asset="tex/title.webp"><div class="bar"><i></i></div><div class="msg">正在载入…</div></div>`;
     this.ui = ui;
     this.el = (s) => ui.querySelector(s);
     this.hud = this.el('#hud');
     this.mapImg = new Image();
-    this.mapImg.src = TEX + 'minimap_map.webp';
+    assetURL('tex/minimap_map.webp').then((u) => { this.mapImg.src = u; });
+    for (const img of ui.querySelectorAll('img[data-asset]')) assetURL(img.dataset.asset).then((u) => { img.src = u; });
+    // images used from CSS + the original fonts, resolved through the asset packs
+    const root = document.documentElement.style;
+    for (const [v, f] of [['--huds', 'tex/huds.webp'], ['--cin', 'tex/cinematics_hud.webp'], ['--title', 'tex/title.webp']])
+      assetURL(f).then((u) => root.setProperty(v, `url("${u}")`));
+    for (const [f, range] of [['fonts/font_latin.ttf', 'U+0000-024F'], ['fonts/font_chinese.ttf', undefined]]) {
+      assetURL(f).then((u) => fetch(u)).then((r) => r.arrayBuffer()).then((buf) => {
+        const face = new FontFace('GLFont', buf, range ? { unicodeRange: range } : {});
+        document.fonts.add(face);
+        return face.load();
+      }).catch(() => {});
+    }
     this.route = null;
     this.blips = [];
     this.parts = {};
@@ -282,7 +293,7 @@ export class Hud {
   }
 
   drawIcon(c, m, x, y, k = 1) {
-    if (!this.atlas) { this.atlas = new Image(); this.atlas.src = TEX + 'huds.webp'; }
+    if (!this.atlas) { this.atlas = new Image(); assetURL('tex/huds.webp').then((u) => { this.atlas.src = u; }); }
     if (!this.atlas.complete) return;
     const [mx, my, mw, mh] = this.sprite.modules[m];
     c.drawImage(this.atlas, mx, my, mw, mh, x - mw * k / 2, y - mh * k / 2, mw * k, mh * k);

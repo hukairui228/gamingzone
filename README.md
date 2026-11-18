@@ -12,7 +12,7 @@ Requirements: Node 18+, Python 3.10+, ffmpeg.
 
 ```bash
 npm install
-pip install numpy pillow texture2ddecoder
+pip install numpy pillow texture2ddecoder fonttools
 npm run extract -- /path/to/gangstar.ipa
 npm run dev
 ```

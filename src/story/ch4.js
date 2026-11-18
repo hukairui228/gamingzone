@@ -51,6 +51,28 @@ export function findWater(g, x, z, clear = 12, maxR = 260) {
   return [x, z];
 }
 
+/** leave a boat and step onto the nearest jetty / quay instead of the water */
+export async function disembark(m, text) {
+  await m.exitVehicle(text);
+  const g = m.g, p = g.player.pos;
+  if (!(g.world.floor(p.x, p.z) > -0.5)) {
+    const [x, z] = road(m, p.x, p.z, 1);
+    g.placePlayer(x, z, g.player.yaw);
+  }
+}
+
+/** get into a moored boat from the quay (boats sit a few metres off the shore) */
+export async function board(m, boat, text) {
+  const g = m.g;
+  const stop = addCheck(m, () => {
+    const pl = g.player;
+    if (!pl.vehicle && g.ctl.enter && Math.hypot(boat.pos.x - pl.pos.x, boat.pos.z - pl.pos.z) < 14) pl.enter(boat);
+    return null;
+  });
+  await m.getIn(boat, text);
+  stop();
+}
+
 /** spawn a group of characters around a point (snapped to walkable sidewalks) */
 export async function squad(m, models, x, z, opts = {}, spread = 10) {
   const out = [];
@@ -250,23 +272,25 @@ export const CH4 = [
       await m.say([['LC', 55, v()], ['强尼', 56, v()], ['LC', 57, v()], ['强尼', 58, v()], ['LC', 59, v()], ['强尼', 60, v()], ['LC', 61, v()], ['强尼', 62, v()]]);
       lc.follow = true;
       m.protect(lc, ['global', 328]);
-      const [wx, wz] = findWater(g, vx, vz);
+      const [wx, wz] = findWater(g, vx, vz, 4);
       const boat = await m.spawnCar('boat_speedboat_cigar', wx, wz, 0);
       m.protect(boat, ['global', 325]);
-      await m.getIn(boat, ['global', 104]);
+      await board(m, boat, ['global', 104]);
       const [jx, jz] = SPOT.jones;
-      const [jwx, jwz] = findWater(g, jx, jz);
+      const [jwx, jwz] = findWater(g, jx, jz, 4);
       await m.goto(jwx, jwz, { r: 25, text: 63, vehicle: boat });
       const guards = await squad(m, JONES.slice(0, 5), jx, jz, { hostile: true, weapon: ['uzi', 'ak47', 'beretta'], sex: 'female' }, 12);
+      await disembark(m);
       await m.killAll(guards, 64);
       const vm = voice('CH4_M_03_MIDDLE');
       await m.say([['强尼', 65, vm()], ['LC', 66, vm()], ['强尼', 67, vm()]]);
+      await board(m, boat, ['global', 104]);
       const [ax, az] = findWater(g, jwx + 60, jwz + 40);
       const attack = await m.spawnCar('boat_speedboat_police', ax, az, Math.PI, { driver: 'npc' });
       boatAttack(m, attack);
       await m.escape([attack], 160, 68);
       await m.goto(wx, wz, { r: 25, text: 69, vehicle: boat });
-      await m.exitVehicle();
+      await disembark(m);
       const fam = await cast(m, [['贝蒂', 'char_betty', 'female'], ['乔伊', 'char_joey']], vx, vz);
       void fam;
       const ve = voice('CH4_M_03_END');
@@ -359,7 +383,7 @@ export const CH4 = [
       await m.goto(px, pz, { r: 30, text: 138 });
       m.stopTimer();
       const [cx, cz, cyaw] = road(m, px + 15, pz + 10);
-      const cruiser = await m.spawnCar('car_police_rich', cx, cz, cyaw, { driver: 'cop', health: 700 });
+      const cruiser = await m.spawnCar('car_police_rich', cx, cz, cyaw, { driver: 'cop', health: 420 });
       const d = driveTo(m, cruiser, road(m, 300, 250), 0.6);
       await destroy(m, [cruiser], 139, 260);
       d.stop();
@@ -386,15 +410,16 @@ export const CH4 = [
       await m.say([['强尼', 150, v()], ['贝蒂', 151, v()], ['强尼', 152, v()], ['贝蒂', 153, v()], ['强尼', 154, v()], ['贝蒂', 155, v()],
         ['强尼', 156, v()], ['贝蒂', 157, v()], ['强尼', 158, v()], ['贝蒂', 159, v()]]);
       // the spy runs for it across the swamp; Roscoe's old airboat is moored at the bank
-      const [ax, az] = findWater(g, bx - 20, bz, 6);
+      const [ax, az] = findWater(g, bx, bz, 4);
       const airboat = await m.spawnCar('boat_floatingpoint_single', ax, az, -Math.PI / 2);
       const [ex, ez] = findWater(g, bx - 70, bz + 40, 8);
-      const spyBoat = await m.spawnCar('boat_seadoo', ex, ez, 0, { driver: 'npc', health: 500 });
+      const spyBoat = await m.spawnCar('boat_seadoo', ex, ez, 0, { driver: 'npc', health: 160 });
       const route = [findWater(g, ex - 80, ez + 60, 8), findWater(g, ex - 40, ez + 160, 8), findWater(g, ex + 20, ez + 80, 8), [ex, ez]];
       const stop = boatPatrol(m, spyBoat, route, 0.6);
-      await m.getIn(airboat, ['global', 104]);
+      await board(m, airboat, ['global', 104]);
       await destroy(m, [spyBoat], 160, 400);
       stop();
+      if (g.player.vehicle) await disembark(m);
       const [sx, sz] = road(m, spyBoat.pos.x, spyBoat.pos.z, 1);
       const spy = await m.spawnPed('char_civ_trash_1', sx, sz, { kind: 'gang' });
       spy.goal = [sx + 4, sz + 4, true];

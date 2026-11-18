@@ -25,7 +25,7 @@ const P = {
   bridgeWater: [302, 20], bridgeDeck: [302, 9],
   store: [-120, -250],
   albert: [150, 140], vantage: [190, 165],
-  truckStart: [330, 232], warehouse: [120, 160],
+  truckStart: [290, 215], warehouse: [120, 160],
   warehouse2: [330, 250], hide: [305, 228],
   docLand: [-179, 407], docWater: [-174, 416],
   havana: [-450, 250], roof: [-430, 235], havanaGang: [-470, 205],
@@ -476,7 +476,7 @@ export const CH1 = [
       const [sx, sz, syaw] = road(m, ...P.truckStart);
       const truck = await m.spawnCar('car_truck', sx, sz, syaw, { driver: 'npc' });
       const dest = walk(m, ...P.warehouse).slice(0, 2);
-      await tail(m, truck, dest, { text: 212, speed: 0.45 });
+      await tail(m, truck, dest, { text: 212, speed: 0.45, far: 200 });
       const vega = await m.spawnPed('char_vega', dest[0] + 3, dest[1] + 2, { kind: 'gang' });
       await m.spawnPed('char_mafia_a', dest[0] - 2, dest[1] + 3, { kind: 'gang', weapon: 'beretta' });
       const vb = voice('CH1_M09_MIDDLE_B');
